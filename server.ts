@@ -2691,9 +2691,12 @@ async function startServer() {
         "/api/health",
         "/api/firebase-check",
         "/api/search",
-        "/api/details",
-        "/api/tmdb-list",
-        "/api/recommendations"
+        "/api/tmdb-details",
+        "/api/recommend",
+        "/api/generate-cover",
+        "/api/tmdb-discover",
+        "/api/auth/register",
+        "/api/auth/login"
       ]
     });
   });
@@ -2707,9 +2710,12 @@ async function startServer() {
         "/api/health",
         "/api/firebase-check",
         "/api/search",
-        "/api/details",
-        "/api/tmdb-list",
-        "/api/recommendations"
+        "/api/tmdb-details",
+        "/api/recommend",
+        "/api/generate-cover",
+        "/api/tmdb-discover",
+        "/api/auth/register",
+        "/api/auth/login"
       ]
     });
   });
