@@ -2681,6 +2681,23 @@ Generate a JSON object containing:
 
 // Start API server and mount Vite middleware for dev mode
 async function startServer() {
+  app.get('/', (req, res) => {
+    res.json({
+      name: "Sequel / Chronicle Backend API",
+      status: "online",
+      version: "1.0.0",
+      endpoints: [
+        "/api/status",
+        "/api/health",
+        "/api/firebase-check",
+        "/api/search",
+        "/api/details",
+        "/api/tmdb-list",
+        "/api/recommendations"
+      ]
+    });
+  });
+
   app.get('/api/status', (req, res) => {
     res.json({
       name: "Sequel / Chronicle Backend API",
