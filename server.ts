@@ -1809,7 +1809,7 @@ let DISCOVER_CACHE_TIMESTAMP = 0;
 const DISCOVER_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
 // API Endpoint: Discover Feed (Trending, Top Rated, Upcoming, TV Airing Today, Sci-Fi)
-app.get("/api/tmdb-discover", async (req, res) => {
+app.get(["/api/tmdb-discover", "/api/discover"], async (req, res) => {
   const now = Date.now();
   if (DISCOVER_CACHE && (now - DISCOVER_CACHE_TIMESTAMP < DISCOVER_CACHE_TTL)) {
     console.log("[Cache Hit] Serving tmdb-discover feed from memory cache");
@@ -2691,12 +2691,14 @@ async function startServer() {
         "/api/health",
         "/api/firebase-check",
         "/api/search",
+        "/api/discover",
         "/api/tmdb-details",
         "/api/recommend",
         "/api/generate-cover",
-        "/api/tmdb-discover",
         "/api/auth/register",
-        "/api/auth/login"
+        "/api/auth/login",
+        "/api/auth/sync-get",
+        "/api/auth/sync-save"
       ]
     });
   });
@@ -2710,12 +2712,14 @@ async function startServer() {
         "/api/health",
         "/api/firebase-check",
         "/api/search",
+        "/api/discover",
         "/api/tmdb-details",
         "/api/recommend",
         "/api/generate-cover",
-        "/api/tmdb-discover",
         "/api/auth/register",
-        "/api/auth/login"
+        "/api/auth/login",
+        "/api/auth/sync-get",
+        "/api/auth/sync-save"
       ]
     });
   });

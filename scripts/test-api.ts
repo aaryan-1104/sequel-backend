@@ -33,6 +33,11 @@ const testCases: TestItem[] = [
     method: "GET"
   },
   {
+    name: "Discover Feed API",
+    path: "/api/discover",
+    method: "GET"
+  },
+  {
     name: "Unified Media Search (Movie: Inception)",
     path: "/api/search",
     method: "POST",

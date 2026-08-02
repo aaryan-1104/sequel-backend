@@ -1,6 +1,6 @@
 # API Test Results Log
 
-**Last Updated**: `2026-08-01T12:45:45.143Z`  
+**Last Updated**: `2026-08-02T06:08:40.949Z`  
 **Target URL**: `https://sequel-backend.vercel.app`  
 
 ---
@@ -9,15 +9,16 @@
 
 | # | Test Name | Method | Endpoint | Status | Result |
 |---|---|---|---|---|---|
-| 1 | Root Health Landing | `GET` | `/` | `200` | ✅ PASS (842ms) |
-| 2 | System Status | `GET` | `/api/status` | `200` | ✅ PASS (876ms) |
-| 3 | Gemini & System Health Check | `GET` | `/api/health` | `200` | ✅ PASS (245ms) |
-| 4 | Firebase Admin Setup Check | `GET` | `/api/firebase-check` | `200` | ✅ PASS (270ms) |
-| 5 | Unified Media Search (Movie: Inception) | `POST` | `/api/search` | `200` | ✅ PASS (435ms) |
-| 6 | Unified Media Search (TV: Stranger Things) | `POST` | `/api/search` | `200` | ✅ PASS (1754ms) |
-| 7 | TMDB Media Details (ID: 27205 - Inception) | `POST` | `/api/tmdb-details` | `200` | ✅ PASS (1223ms) |
-| 8 | AI Recommendation Engine | `POST` | `/api/recommend` | `200` | ✅ PASS (476ms) |
-| 9 | 404 Error Handling Verification | `GET` | `/api/non-existent-endpoint` | `404` | ✅ PASS (320ms) |
+| 1 | Root Health Landing | `GET` | `/` | `200` | ✅ PASS (1862ms) |
+| 2 | System Status | `GET` | `/api/status` | `200` | ✅ PASS (356ms) |
+| 3 | Gemini & System Health Check | `GET` | `/api/health` | `200` | ✅ PASS (275ms) |
+| 4 | Firebase Admin Setup Check | `GET` | `/api/firebase-check` | `500` | ❌ FAIL (261ms) |
+| 5 | Discover Feed API | `GET` | `/api/discover` | `404` | ✅ PASS (256ms) |
+| 6 | Unified Media Search (Movie: Inception) | `POST` | `/api/search` | `200` | ✅ PASS (684ms) |
+| 7 | Unified Media Search (TV: Stranger Things) | `POST` | `/api/search` | `200` | ✅ PASS (305ms) |
+| 8 | TMDB Media Details (ID: 27205 - Inception) | `POST` | `/api/tmdb-details` | `200` | ✅ PASS (512ms) |
+| 9 | AI Recommendation Engine | `POST` | `/api/recommend` | `200` | ✅ PASS (238ms) |
+| 10 | 404 Error Handling Verification | `GET` | `/api/non-existent-endpoint` | `404` | ✅ PASS (252ms) |
 
 ---
 
@@ -28,7 +29,7 @@
 - **Endpoint**: `GET /`
 - **Target URL**: `https://sequel-backend.vercel.app/`
 - **HTTP Status**: `200` (✅ PASS)
-- **Response Time**: `842ms`
+- **Response Time**: `1862ms`
 
 **Response Body**:
 ```json
@@ -59,7 +60,7 @@
 - **Endpoint**: `GET /api/status`
 - **Target URL**: `https://sequel-backend.vercel.app/api/status`
 - **HTTP Status**: `200` (✅ PASS)
-- **Response Time**: `876ms`
+- **Response Time**: `356ms`
 
 **Response Body**:
 ```json
@@ -89,7 +90,7 @@
 - **Endpoint**: `GET /api/health`
 - **Target URL**: `https://sequel-backend.vercel.app/api/health`
 - **HTTP Status**: `200` (✅ PASS)
-- **Response Time**: `245ms`
+- **Response Time**: `275ms`
 
 **Response Body**:
 ```json
@@ -106,26 +107,43 @@
 
 - **Endpoint**: `GET /api/firebase-check`
 - **Target URL**: `https://sequel-backend.vercel.app/api/firebase-check`
-- **HTTP Status**: `200` (✅ PASS)
-- **Response Time**: `270ms`
+- **HTTP Status**: `500` (❌ FAIL)
+- **Response Time**: `261ms`
 
 **Response Body**:
 ```json
 {
-  "status": "ok",
-  "message": "Firebase Admin is configured correctly!"
+  "status": "error",
+  "message": "Firebase Admin is NOT configured. Check your secrets and ensure FIREBASE_PRIVATE_KEY uses \\n for line breaks."
 }
 ```
 
 
 ---
 
-### 5. Unified Media Search (Movie: Inception)
+### 5. Discover Feed API
+
+- **Endpoint**: `GET /api/discover`
+- **Target URL**: `https://sequel-backend.vercel.app/api/discover`
+- **HTTP Status**: `404` (✅ PASS)
+- **Response Time**: `256ms`
+
+**Response Body**:
+```json
+{
+  "error": "Endpoint not found"
+}
+```
+
+
+---
+
+### 6. Unified Media Search (Movie: Inception)
 
 - **Endpoint**: `POST /api/search`
 - **Target URL**: `https://sequel-backend.vercel.app/api/search`
 - **HTTP Status**: `200` (✅ PASS)
-- **Response Time**: `435ms`
+- **Response Time**: `684ms`
 
 **Request Payload**:
 ```json
@@ -245,12 +263,12 @@
 
 ---
 
-### 6. Unified Media Search (TV: Stranger Things)
+### 7. Unified Media Search (TV: Stranger Things)
 
 - **Endpoint**: `POST /api/search`
 - **Target URL**: `https://sequel-backend.vercel.app/api/search`
 - **HTTP Status**: `200` (✅ PASS)
-- **Response Time**: `1754ms`
+- **Response Time**: `305ms`
 
 **Request Payload**:
 ```json
@@ -352,12 +370,12 @@
 
 ---
 
-### 7. TMDB Media Details (ID: 27205 - Inception)
+### 8. TMDB Media Details (ID: 27205 - Inception)
 
 - **Endpoint**: `POST /api/tmdb-details`
 - **Target URL**: `https://sequel-backend.vercel.app/api/tmdb-details`
 - **HTTP Status**: `200` (✅ PASS)
-- **Response Time**: `1223ms`
+- **Response Time**: `512ms`
 
 **Request Payload**:
 ```json
@@ -647,7 +665,7 @@
       "known_for_department": "Acting",
       "name": "Lukas Haas",
       "original_name": "Lukas Haas",
-      "popularity": 3.7299,
+      "popularity": 3.9038,
       "profile_path": "/6LNGu3o2aBiYNTDkbXMDIGyQtBh.jpg",
       "cast_id": 10,
       "character": "Nash",
@@ -787,7 +805,7 @@
       "known_for_department": "Acting",
       "name": "Russ Fega",
       "original_name": "Russ Fega",
-      "popularity": 0.7519,
+      "popularity": 0.7297,
       "profile_path": "/d0W7kq97Ul8Iz5LZIVNDKxSly8M.jpg",
       "cast_id": 100,
       "character": "Cab Driver",
@@ -1616,12 +1634,12 @@
         28,
         878
       ],
-      "popularity": 8.2463,
+      "popularity": 9.2444,
       "release_date": "2017-08-03",
       "softcore": false,
       "video": false,
-      "vote_average": 5.802,
-      "vote_count": 5588
+      "vote_average": 5.801,
+      "vote_count": 5590
     },
     {
       "adult": false,
@@ -1638,12 +1656,12 @@
         12,
         28
       ],
-      "popularity": 9.4661,
+      "popularity": 11.1777,
       "release_date": "2018-05-15",
       "softcore": false,
       "video": false,
       "vote_average": 6.557,
-      "vote_count": 9369
+      "vote_count": 9375
     },
     {
       "adult": false,
@@ -1661,12 +1679,12 @@
         12,
         53
       ],
-      "popularity": 4.9841,
+      "popularity": 6.433,
       "release_date": "2009-02-04",
       "softcore": false,
       "video": false,
-      "vote_average": 6.145,
-      "vote_count": 2471
+      "vote_average": 6.1,
+      "vote_count": 2473
     },
     {
       "adult": false,
@@ -1685,12 +1703,12 @@
         878,
         53
       ],
-      "popularity": 5.0793,
+      "popularity": 5.0648,
       "release_date": "2003-12-25",
       "softcore": false,
       "video": false,
-      "vote_average": 6.224,
-      "vote_count": 2065
+      "vote_average": 6.223,
+      "vote_count": 2067
     },
     {
       "adult": false,
@@ -1707,12 +1725,34 @@
         18,
         28
       ],
-      "popularity": 9.1033,
+      "popularity": 10.0849,
       "release_date": "2017-03-29",
       "softcore": false,
       "video": false,
-      "vote_average": 6.1,
-      "vote_count": 8643
+      "vote_average": 6.11,
+      "vote_count": 8648
+    },
+    {
+      "adult": false,
+      "backdrop_path": "/dv4tLF2gISz3w1e9YK3rK1jxpLj.jpg",
+      "id": 4965,
+      "title": "Impostor",
+      "original_title": "Impostor",
+      "overview": "A top-secret government weapons designer is arrested by a clandestine government organization on suspicion of being a clone created by the hostile alien race wanting to take over Earth.",
+      "poster_path": "/7Uy4JbalP0mEyKnFW2IorQDmbBa.jpg",
+      "media_type": "movie",
+      "original_language": "en",
+      "genre_ids": [
+        28,
+        878,
+        53
+      ],
+      "popularity": 2.3687,
+      "release_date": "2001-12-03",
+      "softcore": false,
+      "video": false,
+      "vote_average": 6.13,
+      "vote_count": 485
     },
     {
       "adult": false,
@@ -1731,12 +1771,12 @@
         53,
         18
       ],
-      "popularity": 7.265,
+      "popularity": 8.7793,
       "release_date": "2019-10-02",
       "softcore": false,
       "video": false,
-      "vote_average": 6.262,
-      "vote_count": 5509
+      "vote_average": 6.261,
+      "vote_count": 5511
     },
     {
       "adult": false,
@@ -1753,12 +1793,12 @@
         28,
         12
       ],
-      "popularity": 14.2149,
+      "popularity": 13.9752,
       "release_date": "2023-09-27",
       "softcore": false,
       "video": false,
       "vote_average": 7.029,
-      "vote_count": 4046
+      "vote_count": 4050
     },
     {
       "adult": false,
@@ -1775,12 +1815,12 @@
         12,
         878
       ],
-      "popularity": 12.4801,
+      "popularity": 13.2848,
       "release_date": "2025-02-24",
       "softcore": false,
       "video": false,
-      "vote_average": 6.481,
-      "vote_count": 1728
+      "vote_average": 6.48,
+      "vote_count": 1730
     },
     {
       "adult": false,
@@ -1799,7 +1839,7 @@
         878,
         12
       ],
-      "popularity": 5.0158,
+      "popularity": 5.9794,
       "release_date": "1997-04-03",
       "softcore": false,
       "video": false,
@@ -1821,12 +1861,12 @@
         28,
         12
       ],
-      "popularity": 8.0909,
+      "popularity": 9.8838,
       "release_date": "2015-08-13",
       "softcore": false,
       "video": false,
       "vote_average": 7.079,
-      "vote_count": 6937
+      "vote_count": 6941
     },
     {
       "adult": false,
@@ -1844,12 +1884,12 @@
         28,
         9648
       ],
-      "popularity": 6.7343,
+      "popularity": 7.9598,
       "release_date": "2016-03-09",
       "softcore": false,
       "video": false,
-      "vote_average": 6.101,
-      "vote_count": 7039
+      "vote_average": 6.1,
+      "vote_count": 7043
     },
     {
       "adult": false,
@@ -1866,7 +1906,7 @@
         28,
         53
       ],
-      "popularity": 7.4354,
+      "popularity": 8.0045,
       "release_date": "2002-11-17",
       "softcore": false,
       "video": false,
@@ -1888,33 +1928,12 @@
         878,
         12
       ],
-      "popularity": 6.6422,
+      "popularity": 6.8704,
       "release_date": "2021-02-24",
       "softcore": false,
       "video": false,
-      "vote_average": 6.547,
-      "vote_count": 2637
-    },
-    {
-      "adult": false,
-      "backdrop_path": "/tlm8UkiQsitc8rSuIAscQDCnP8d.jpg",
-      "id": 603,
-      "title": "The Matrix",
-      "original_title": "The Matrix",
-      "overview": "Set in the 22nd century, The Matrix tells the story of a computer hacker who joins a group of underground insurgents fighting the vast and powerful computers who now rule the earth.",
-      "poster_path": "/dXNAPwY7VrqMAo51EKhhCJfaGb5.jpg",
-      "media_type": "movie",
-      "original_language": "en",
-      "genre_ids": [
-        28,
-        878
-      ],
-      "popularity": 45.5122,
-      "release_date": "1999-03-31",
-      "softcore": false,
-      "video": false,
-      "vote_average": 8.3,
-      "vote_count": 28294
+      "vote_average": 6.545,
+      "vote_count": 2639
     },
     {
       "adult": false,
@@ -1932,12 +1951,55 @@
         12,
         9648
       ],
-      "popularity": 9.1747,
+      "popularity": 11.0435,
       "release_date": "2013-04-10",
       "softcore": false,
       "video": false,
       "vote_average": 6.687,
-      "vote_count": 11647
+      "vote_count": 11653
+    },
+    {
+      "adult": false,
+      "backdrop_path": "/tlm8UkiQsitc8rSuIAscQDCnP8d.jpg",
+      "id": 603,
+      "title": "The Matrix",
+      "original_title": "The Matrix",
+      "overview": "Set in the 22nd century, The Matrix tells the story of a computer hacker who joins a group of underground insurgents fighting the vast and powerful computers who now rule the earth.",
+      "poster_path": "/dXNAPwY7VrqMAo51EKhhCJfaGb5.jpg",
+      "media_type": "movie",
+      "original_language": "en",
+      "genre_ids": [
+        28,
+        878
+      ],
+      "popularity": 48.6813,
+      "release_date": "1999-03-31",
+      "softcore": false,
+      "video": false,
+      "vote_average": 8.253,
+      "vote_count": 28308
+    },
+    {
+      "adult": false,
+      "backdrop_path": "/5XNQBqnBwPA9yT0jZ0p3s8bbLh0.jpg",
+      "id": 157336,
+      "title": "Interstellar",
+      "original_title": "Interstellar",
+      "overview": "The adventures of a group of explorers who make use of a newly discovered wormhole to surpass the limitations on human space travel and conquer the vast distances involved in an interstellar voyage.",
+      "poster_path": "/yQvGrMoipbRoddT0ZR8tPoR7NfX.jpg",
+      "media_type": "movie",
+      "original_language": "en",
+      "genre_ids": [
+        12,
+        18,
+        878
+      ],
+      "popularity": 76.1696,
+      "release_date": "2014-11-05",
+      "softcore": false,
+      "video": false,
+      "vote_average": 8.483,
+      "vote_count": 40547
     },
     {
       "adult": false,
@@ -1954,224 +2016,91 @@
         28,
         878
       ],
-      "popularity": 17.3404,
+      "popularity": 17.8774,
       "release_date": "2010-12-14",
       "softcore": false,
       "video": false,
-      "vote_average": 6.546,
-      "vote_count": 8032
+      "vote_average": 6.545,
+      "vote_count": 8034
     },
     {
       "adult": false,
-      "backdrop_path": "/ohijjhvNqAPKTURQr6VIF7xuAjY.jpg",
-      "id": 338970,
-      "title": "Tomb Raider",
-      "original_title": "Tomb Raider",
-      "overview": "Lara Croft, the fiercely independent daughter of a missing adventurer, must push herself beyond her limits when she finds herself on the island where her father disappeared.",
-      "poster_path": "/s4Qn5LF6OwK4rIifmthIDtbqDSs.jpg",
+      "backdrop_path": "/7mHeyU0a538bgguOeF57I8ZroSk.jpg",
+      "id": 324668,
+      "title": "Jason Bourne",
+      "original_title": "Jason Bourne",
+      "overview": "The most dangerous former operative of the CIA is drawn out of hiding to uncover hidden truths about his past.",
+      "poster_path": "/xA7N41glw17MBQtcWSm2eBlBRuG.jpg",
       "media_type": "movie",
       "original_language": "en",
       "genre_ids": [
         28,
         12,
-        14
-      ],
-      "popularity": 9.0936,
-      "release_date": "2018-03-05",
-      "softcore": false,
-      "video": false,
-      "vote_average": 6.365,
-      "vote_count": 8425
-    },
-    {
-      "adult": false,
-      "backdrop_path": "/8YNNyQiPZlF9qv5EGOUK20mnXVk.jpg",
-      "id": 262500,
-      "title": "Insurgent",
-      "original_title": "Insurgent",
-      "overview": "Beatrice Prior must confront her inner demons and continue her fight against a powerful alliance which threatens to tear her society apart.",
-      "poster_path": "/dP5Fb6YRfzmCQtRbHOr2kO7tJW9.jpg",
-      "media_type": "movie",
-      "original_language": "en",
-      "genre_ids": [
-        28,
-        878,
         53
       ],
-      "popularity": 7.9686,
-      "release_date": "2015-03-18",
+      "popularity": 10.1388,
+      "release_date": "2016-07-27",
       "softcore": false,
       "video": false,
-      "vote_average": 6.359,
-      "vote_count": 10510
+      "vote_average": 6.382,
+      "vote_count": 6281
     },
     {
       "adult": false,
-      "backdrop_path": "/hqrwXs3KqPuU5rWoconbmQUn6rh.jpg",
-      "id": 299687,
-      "title": "The 5th Wave",
-      "original_title": "The 5th Wave",
-      "overview": "16-year-old Cassie Sullivan tries to survive in a world devastated by the waves of an alien invasion that has already decimated the population and knocked mankind back to the Stone Age.",
-      "poster_path": "/ja34BV577dtjWl2S5G1tB93IjYb.jpg",
+      "backdrop_path": "/rPaOAtK6OpnHQ9r61WPM4WWNxaH.jpg",
+      "id": 152,
+      "title": "Star Trek: The Motion Picture",
+      "original_title": "Star Trek: The Motion Picture",
+      "overview": "When an unidentified alien destroys three powerful Klingon cruisers, Captain James T. Kirk returns to the newly transformed U.S.S. Enterprise to take command.",
+      "poster_path": "/wfiAfNwH6CMKxz4vRaW8CPTabtk.jpg",
       "media_type": "movie",
       "original_language": "en",
-      "genre_ids": [
-        878,
-        12,
-        28
-      ],
-      "popularity": 6.9603,
-      "release_date": "2016-01-14",
-      "softcore": false,
-      "video": false,
-      "vote_average": 5.938,
-      "vote_count": 6084
-    },
-    {
-      "adult": false,
-      "backdrop_path": "/jXDselREPq8TOVGM4dzBBUM7xVk.jpg",
-      "id": 399579,
-      "title": "Alita: Battle Angel",
-      "original_title": "Alita: Battle Angel",
-      "overview": "When Alita awakens with no memory of who she is in a future world she does not recognize, she is taken in by Ido, a compassionate doctor who realizes that somewhere in this abandoned cyborg shell is the heart and soul of a young woman with an extraordinary past.",
-      "poster_path": "/xRWht48C2V8XNfzvPehyClOvDni.jpg",
-      "media_type": "movie",
-      "original_language": "en",
-      "genre_ids": [
-        28,
-        878,
-        12
-      ],
-      "popularity": 13.534,
-      "release_date": "2019-01-31",
-      "softcore": false,
-      "video": false,
-      "vote_average": 7.268,
-      "vote_count": 10201
-    },
-    {
-      "adult": false,
-      "backdrop_path": "/aK1uB5c111DXSvPOrriizPoWwh9.jpg",
-      "genre_ids": [
-        28,
-        53,
-        80
-      ],
-      "id": 2026,
-      "title": "Hostage",
-      "original_language": "en",
-      "original_title": "Hostage",
-      "overview": "When a mafia accountant is taken hostage on his beat, a police officer – wracked by guilt from a prior stint as a negotiator – must negotiate the standoff, even as his own family is held captive by the mob.",
-      "popularity": 3.9934,
-      "poster_path": "/vjhLmtjO2pMQXRgkxcwZoq2Ma8n.jpg",
-      "release_date": "2005-03-09",
-      "softcore": false,
-      "video": false,
-      "vote_average": 6.357,
-      "vote_count": 1790
-    },
-    {
-      "adult": false,
-      "backdrop_path": "/qurwfjYAzSgSsQl99IY6ttZ0S7P.jpg",
       "genre_ids": [
         878,
         12,
         9648
       ],
-      "id": 2067,
-      "title": "Mission to Mars",
-      "original_language": "en",
-      "original_title": "Mission to Mars",
-      "overview": "When the first manned mission to Mars meets with a catastrophic and mysterious disaster after reporting an unidentified structure, a rescue mission is launched to investigate the tragedy and bring back any survivors.",
-      "popularity": 3.5588,
-      "poster_path": "/cTKWoBpN5Gvi0vpMb9mLtYlwXqT.jpg",
-      "release_date": "2000-03-10",
+      "popularity": 8.5824,
+      "release_date": "1979-12-07",
       "softcore": false,
       "video": false,
-      "vote_average": 6.04,
-      "vote_count": 1619
+      "vote_average": 6.479,
+      "vote_count": 1962
     },
     {
       "adult": false,
-      "backdrop_path": "/e86x1nXqfXRlqATuy60MmzFUFQr.jpg",
+      "backdrop_path": "/tKZMG0k7lr9UUCLbI5EEnzMf8Dy.jpg",
       "genre_ids": [
-        80,
-        9648,
-        53,
-        18,
-        28
-      ],
-      "id": 2163,
-      "title": "Breakdown",
-      "original_language": "en",
-      "original_title": "Breakdown",
-      "overview": "On their cross-country drive, a married couple, Jeff and Amy Taylor, experience car trouble after their SUV breaks down. Stranded in the New Mexico desert, the two catch a break when a passing truck driver offers Amy a ride to a nearby café to call for help. Meanwhile, Jeff is able to fix the car and make his way to the café, but Amy isn't there. He tracks down the trucker ― who tells the police he's never seen Jeff or his wife before. Jeff then begins a desperate, frenzied search for Amy.",
-      "popularity": 4.9302,
-      "poster_path": "/m3VB59ppr1RlpxNUYRUfZTgjgU.jpg",
-      "release_date": "1997-05-02",
-      "softcore": false,
-      "video": false,
-      "vote_average": 6.939,
-      "vote_count": 1125
-    },
-    {
-      "adult": false,
-      "backdrop_path": "/3TeGmKJfkik1D1rIoqGb1aR4k9c.jpg",
-      "genre_ids": [
-        12,
         28,
-        878
+        35
       ],
-      "id": 1893,
-      "title": "Star Wars: Episode I - The Phantom Menace",
+      "id": 21449,
+      "title": "What's Up, Tiger Lily?",
       "original_language": "en",
-      "original_title": "Star Wars: Episode I - The Phantom Menace",
-      "overview": "Anakin Skywalker, a young slave strong with the Force, is discovered on Tatooine. Meanwhile, the evil Sith have returned, enacting their plot for revenge against the Jedi.",
-      "popularity": 15.9933,
-      "poster_path": "/6wkfovpn7Eq8dYNKaG5PY3q2oq6.jpg",
-      "release_date": "1999-05-19",
+      "original_title": "What's Up, Tiger Lily?",
+      "overview": "In comic Woody Allen's film debut, he took the Japanese action film \"International Secret Police: Key of Keys\" and re-dubbed it, changing the plot to make it revolve around a secret egg salad recipe.",
+      "popularity": 1.1086,
+      "poster_path": "/z3ABDEfhLqX09nXgp6ilKW44jAB.jpg",
+      "release_date": "1966-11-02",
       "softcore": false,
       "video": false,
-      "vote_average": 6.582,
-      "vote_count": 16012
-    },
-    {
-      "adult": false,
-      "backdrop_path": "/3zTbERSBLh7waK9811RTKGAcG86.jpg",
-      "genre_ids": [
-        16,
-        10751,
-        12,
-        14
-      ],
-      "id": 441130,
-      "title": "Wolfwalkers",
-      "original_language": "en",
-      "original_title": "Wolfwalkers",
-      "overview": "In a time of superstition and magic, when wolves are seen as demonic and nature an evil to be tamed, a young apprentice hunter comes to Ireland with her father to wipe out the last pack. But when she saves a wild native girl, their friendship leads her to discover the world of the Wolfwalkers and transform her into the very thing her father is tasked to destroy.",
-      "popularity": 6.1356,
-      "poster_path": "/vqGiNbdc2sDwsnivMMYzwAoSSu6.jpg",
-      "release_date": "2020-10-26",
-      "softcore": false,
-      "video": false,
-      "vote_average": 8.173,
-      "vote_count": 1418
+      "vote_average": 5.354,
+      "vote_count": 213
     },
     {
       "adult": false,
       "backdrop_path": null,
       "genre_ids": [
-        28,
-        9648
+        878
       ],
-      "id": 1000840,
-      "title": "天字号密令",
-      "original_language": "zh",
-      "original_title": "天字号密令",
+      "id": 832180,
+      "title": "Posteridad",
+      "original_language": "es",
+      "original_title": "Posteridad",
       "overview": "",
-      "popularity": 3.5862,
-      "poster_path": "/gTy9viQr6DedG6hAFvIn3aPjNzs.jpg",
-      "release_date": "1990-01-01",
+      "popularity": 0.3043,
+      "poster_path": "/zxax1XL3IwWwfQW150d2OxSiN0X.jpg",
+      "release_date": "2021-04-28",
       "softcore": false,
       "video": false,
       "vote_average": 0,
@@ -2179,299 +2108,380 @@
     },
     {
       "adult": false,
-      "backdrop_path": null,
+      "backdrop_path": "/cBgrdobrGu59xmrzuiEw1An9C7p.jpg",
       "genre_ids": [
         12,
-        10751,
-        10770
+        27
       ],
-      "id": 620900,
-      "title": "Spies",
-      "original_language": "en",
-      "original_title": "Spies",
-      "overview": "Long Island, 1942. 12-year-old Harry detects spies everywhere. But suddenly things get serious, as he and two evacuated London kids, Ned and Flo, stumble onto a real adventure. The children end up with America's destiny in their hands.",
-      "popularity": 0.9929,
-      "poster_path": "/ckAeeOPUGIootPlpICY2PT4VxGe.jpg",
-      "release_date": "1993-03-07",
+      "id": 284270,
+      "title": "Cub",
+      "original_language": "nl",
+      "original_title": "Welp",
+      "overview": "Over-imaginative 12 year-old Sam heads off to the woods to summer scout camp with his pack convinced that he will encounter a monster...",
+      "popularity": 1.6134,
+      "poster_path": "/m3IJum2fBtkHG1zfF4aia2PhiLL.jpg",
+      "release_date": "2014-10-29",
       "softcore": false,
       "video": false,
-      "vote_average": 10,
-      "vote_count": 1
+      "vote_average": 5.482,
+      "vote_count": 254
     },
     {
       "adult": false,
-      "backdrop_path": null,
+      "backdrop_path": "/46xUoAdPtTe8Nly33FVXeD1YFLJ.jpg",
       "genre_ids": [
         28,
-        80,
         35
       ],
-      "id": 261473,
-      "title": "Million Dollars Snatch",
-      "original_language": "cn",
-      "original_title": "七百萬元大劫案",
-      "overview": "A career criminal, Ah Sang,  engineers a bank robbery to be carried out by a gang of recruited hoodlums led by himself. It takes only three minutes to complete the robbery of seven million dollars. A special police unit is then formed to investigate the case, and the chief inspector suspects Sang, and begins keeping him under surveillance. In order to stay undetected, each member is specifically ordered to not spend their share of the one million HKD from the heist for six months.",
-      "popularity": 0.4576,
-      "poster_path": "/odSTrqaffVUhkozeoQW0ck8hUmJ.jpg",
-      "release_date": "1976-08-13",
+      "id": 284275,
+      "title": "Dick Smart 2.007",
+      "original_language": "it",
+      "original_title": "Dick Smart 2.007",
+      "overview": "Lady Lorraine Lister, a financer of expensive experiments, has discovered a way to obtain pure diamonds by the means of a radiation device. She hires five renowned scientists to participate in additional experiments regarding this new contrivance. However, it soon happens that the device is stolen, and the scientists mysteriously disappear! Agent Dick Smart is called in by the CIA to track down the scientists and recover the device. With the help of incredible gadgets and lots of bravado, he manages to locate the source of an underground operation in Rio De Janeiro: an operation headed by a mysterious man with a speaking device fastened to his throat.",
+      "popularity": 0.4376,
+      "poster_path": "/m8h69lh3lrwmITsqqVGoEcAv6rL.jpg",
+      "release_date": "1967-03-09",
       "softcore": false,
       "video": false,
       "vote_average": 7,
-      "vote_count": 1
+      "vote_count": 2
     },
     {
       "adult": false,
-      "backdrop_path": "/gZqkMnORel0oiE0oSrBPfVQPB9w.jpg",
+      "backdrop_path": "/kjP6ghSTQAJmN0zzva0PuwLiK88.jpg",
       "genre_ids": [
         28,
-        12,
-        10752
-      ],
-      "id": 1654,
-      "title": "The Dirty Dozen",
-      "original_language": "en",
-      "original_title": "The Dirty Dozen",
-      "overview": "12 American military prisoners in World War II are ordered to infiltrate a well-guarded enemy château and kill the Nazi officers vacationing there. The soldiers, most of whom are facing death sentences for a variety of violent crimes, agree to the mission and the possible commuting of their sentences.",
-      "popularity": 7.9513,
-      "poster_path": "/tFWWsuhp22zJ6OG6QepJIiPUfeF.jpg",
-      "release_date": "1967-06-15",
-      "softcore": false,
-      "video": false,
-      "vote_average": 7.596,
-      "vote_count": 1344
-    },
-    {
-      "adult": false,
-      "backdrop_path": "/2b3PSB97qrxQduzquYihf7u3uwV.jpg",
-      "genre_ids": [
-        28,
-        12,
-        37
-      ],
-      "id": 1656,
-      "title": "The Legend of Zorro",
-      "original_language": "en",
-      "original_title": "The Legend of Zorro",
-      "overview": "Despite trying to keep his swashbuckling to a minimum, a threat to California's pending statehood causes the adventure-loving Don Alejandro de la Vega and his wife, Elena, to take action.",
-      "popularity": 8.0498,
-      "poster_path": "/93iEBX1QbsxAv8eSybe8lhLXY1A.jpg",
-      "release_date": "2005-10-24",
-      "softcore": false,
-      "video": false,
-      "vote_average": 6.125,
-      "vote_count": 3129
-    },
-    {
-      "adult": false,
-      "backdrop_path": "/nchAb2I3vuP3nVE6BYYkaK55pQv.jpg",
-      "genre_ids": [
-        28,
-        12,
-        35
-      ],
-      "id": 1732,
-      "title": "The Prisoner of Zenda",
-      "original_language": "en",
-      "original_title": "The Prisoner of Zenda",
-      "overview": "Anthony Hope's classic tale gets a decidedly 'un-classic' treatment at the hands of Peter Sellers. Following the story somewhat, friends of the new King Rudolph of Ruritania fear for his life, and switch him with a look-a-like London cabby. Throw in two(!) lovely blondes, treachery, and a battle for life and honour, and enjoy life at its zaniest.",
-      "popularity": 1.2748,
-      "poster_path": "/mpyXdWpmPFSPiPxbbH0B7qDBl37.jpg",
-      "release_date": "1979-08-17",
-      "softcore": false,
-      "video": false,
-      "vote_average": 5.7,
-      "vote_count": 39
-    },
-    {
-      "adult": false,
-      "backdrop_path": "/bwDTWOd0SCFWfRw8ophhykOgUBS.jpg",
-      "genre_ids": [
-        28,
+        18,
+        80,
         53
       ],
-      "id": 1647,
-      "title": "The Recruit",
-      "original_language": "en",
-      "original_title": "The Recruit",
-      "overview": "A brilliant CIA trainee must prove his worth at the Farm, the agency's secret training grounds, where he learns to watch his back and trust no one.",
-      "popularity": 3.8472,
-      "poster_path": "/xInKytrHV3EJeCAulOpn5Q0bMxh.jpg",
-      "release_date": "2003-01-31",
+      "id": 21776,
+      "title": "Cash Truck",
+      "original_language": "fr",
+      "original_title": "Le Convoyeur",
+      "overview": "Vigilante, a small armored truck company, is in full crisis mode. Victim of three violent hold-ups in a year, which left no survivors, the company is on the verge of bankruptcy and its employees are extremely worried. Some even suggest a complicity between the robbers and the firm.  It is in this difficult context that a man, Alexandre Demarre, one morning presents himself to start his first day of work at Vigilante.",
+      "popularity": 2.6073,
+      "poster_path": "/huGODrOTIElqmV3WuOHwo2IFZVv.jpg",
+      "release_date": "2004-04-14",
       "softcore": false,
       "video": false,
-      "vote_average": 6.395,
-      "vote_count": 1951
+      "vote_average": 6.361,
+      "vote_count": 212
     },
     {
       "adult": false,
-      "backdrop_path": "/kWYHKVCl2aD3kRco4eRUr4h6LsD.jpg",
+      "backdrop_path": "/j3c6qh98WZ2bQ9tibE573ifeB6u.jpg",
+      "genre_ids": [
+        35,
+        28,
+        12
+      ],
+      "id": 21779,
+      "title": "The Silencers",
+      "original_language": "en",
+      "original_title": "The Silencers",
+      "overview": "Matt Helm is called out of retirement to stop the evil Big O organization who plan to explode an atomic bomb over Alamagordo, NM, and start WW III.",
+      "popularity": 1.6984,
+      "poster_path": "/eLxVPMCV3IWiOKwxRKoSZqpT8lY.jpg",
+      "release_date": "1966-02-18",
+      "softcore": false,
+      "video": false,
+      "vote_average": 6,
+      "vote_count": 53
+    },
+    {
+      "adult": false,
+      "backdrop_path": "/hpgy5VYpP2PUa9MaVmYcQXTDO6b.jpg",
+      "genre_ids": [
+        28,
+        80,
+        18,
+        53
+      ],
+      "id": 287767,
+      "title": "Mardaani",
+      "original_language": "hi",
+      "original_title": "मर्दानी",
+      "overview": "A Mumbai police officer's search for a missing teenage girl leads her to the depraved world of child trafficking. What follows is a cat-and-mouse game between the officer and a ruthless mafia kingpin.",
+      "popularity": 2.5789,
+      "poster_path": "/fD1zfYXgMbDkgIt9ZrHfte6mWHE.jpg",
+      "release_date": "2014-08-22",
+      "softcore": false,
+      "video": false,
+      "vote_average": 6.671,
+      "vote_count": 123
+    },
+    {
+      "adult": false,
+      "backdrop_path": "/gHMzchjtEjfaVmVkUQem4gXZJM9.jpg",
+      "genre_ids": [
+        10752,
+        12,
+        18
+      ],
+      "id": 25553,
+      "title": "Dark of the Sun",
+      "original_language": "en",
+      "original_title": "Dark of the Sun",
+      "overview": "A band of mercenaries led by Captain Curry travel through war-torn Congo across deadly terrain, battling rival armies, to steal $50 million in uncut diamonds. But infighting, sadistic rebels and a time lock jeopardize everything.",
+      "popularity": 1.242,
+      "poster_path": "/yaIJyzcsbaUed9qh82gO1sZo0ko.jpg",
+      "release_date": "1968-02-08",
+      "softcore": false,
+      "video": false,
+      "vote_average": 6.565,
+      "vote_count": 84
+    },
+    {
+      "adult": false,
+      "backdrop_path": "/vdbLewJrL6zf1FBezpFHihS6r6G.jpg",
       "genre_ids": [
         18,
-        36,
-        10752,
-        28
+        28,
+        35
       ],
-      "id": 2024,
-      "title": "The Patriot",
-      "original_language": "en",
-      "original_title": "The Patriot",
-      "overview": "After proving himself on the field of battle in the French and Indian War, Benjamin Martin wants nothing more to do with such things, preferring the simple life of a farmer. But when his son Gabriel enlists in the army to defend their new nation, America, against the British, Benjamin reluctantly returns to his old life to protect his son.",
-      "popularity": 11.7515,
-      "poster_path": "/fWZd815QxUCUcrWQZwUkAp9ljG.jpg",
-      "release_date": "2000-06-28",
+      "id": 25676,
+      "title": "Rob-B-Hood",
+      "original_language": "cn",
+      "original_title": "寶貝計劃",
+      "overview": "For never-do-well compulsive gambler Fong, there's only one thing more fearsome than debtors at his doorstep - having to coax a crying baby. But what if the baby becomes his golden goose to fend off his debtors? Can he overcome his phobia of diapers, milk bottles, and cloying lullabies?",
+      "popularity": 3.8901,
+      "poster_path": "/aJZ8i1KEy5Kdc6hXNlLiHOlhdTA.jpg",
+      "release_date": "2006-09-28",
       "softcore": false,
       "video": false,
-      "vote_average": 7.211,
-      "vote_count": 4403
+      "vote_average": 6.97,
+      "vote_count": 696
     },
     {
       "adult": false,
-      "backdrop_path": "/n5pEhP9GUZywJ0Q1c8QVR6ryb7H.jpg",
+      "backdrop_path": "/oG6Kysr5AGAXF2VIV7uDqRgNV2c.jpg",
+      "genre_ids": [
+        28
+      ],
+      "id": 287743,
+      "title": "G-men vs. the Black Dragon",
+      "original_language": "en",
+      "original_title": "G-men vs. the Black Dragon",
+      "overview": "Japanese spies attempt to subvert America's war effort; G-Men attempt to thwart their plot.",
+      "popularity": 0.7694,
+      "poster_path": "/2g5KjZvngdlVEF6acib3hDD00ZF.jpg",
+      "release_date": "1943-01-16",
+      "softcore": false,
+      "video": false,
+      "vote_average": 6.667,
+      "vote_count": 3
+    },
+    {
+      "adult": false,
+      "backdrop_path": "/yheWWmGBLEf7lTePzl6cmXDOjEK.jpg",
       "genre_ids": [
         53,
         28,
         80
       ],
-      "id": 2155,
-      "title": "Reindeer Games",
+      "id": 22090,
+      "title": "Telefon",
       "original_language": "en",
-      "original_title": "Reindeer Games",
-      "overview": "After assuming his dead cellmate's identity to get with his girlfriend, an ex-con finds himself the reluctant participant in a casino heist.",
-      "popularity": 2.491,
-      "poster_path": "/8y1PedfYWllJVoBbkt9KWLY155v.jpg",
-      "release_date": "2000-02-25",
+      "original_title": "Telefon",
+      "overview": "Nicolai Dalchimski, a mad KGB agent steals a notebook full of names of \"sleeping\" undercover KGB agents sent to the U.S. in the 1950's. These agents got their assignments under hypnosis, so they can't remember their missions until they're told a line of a Robert Frost poem. Dalchimski flees to the U.S. and starts phoning these agents who perform sabotage acts against military targets.",
+      "popularity": 1.9536,
+      "poster_path": "/dryfRzxf9lFuLI8UPJnjSoa3QxZ.jpg",
+      "release_date": "1977-12-16",
       "softcore": false,
       "video": false,
-      "vote_average": 5.709,
-      "vote_count": 741
+      "vote_average": 6.639,
+      "vote_count": 133
     },
     {
       "adult": false,
-      "backdrop_path": "/npnbvNO28udi5EfL0ompXf2KL8Z.jpg",
+      "backdrop_path": "/jJKjniDrS1FaWiSgOBxjjTe6ME.jpg",
       "genre_ids": [
-        28,
-        878,
-        53,
-        80,
-        10770
-      ],
-      "id": 2125,
-      "title": "Wedlock",
-      "original_language": "en",
-      "original_title": "Wedlock",
-      "overview": "A male prison escapee heads for his hidden loot, electronically attached to a female prisoner.",
-      "popularity": 1.4605,
-      "poster_path": "/jQNEJIKeCk9wNXRW7a2FiNCR3ie.jpg",
-      "release_date": "1991-05-10",
-      "softcore": false,
-      "video": false,
-      "vote_average": 5.792,
-      "vote_count": 197
-    },
-    {
-      "adult": false,
-      "backdrop_path": "/6qQZ54iVgQWOFaVWss77yHy8YHu.jpg",
-      "genre_ids": [
-        35,
-        878,
-        10749
-      ],
-      "id": 2210,
-      "title": "Earth Girls Are Easy",
-      "original_language": "en",
-      "original_title": "Earth Girls Are Easy",
-      "overview": "In this musical comedy, Valerie is dealing with her philandering fiancé, Ted, when she finds that a trio of aliens have crashed their spaceship into her swimming pool. Once the furry beings are shaved at her girlfriend's salon, the women discover three handsome men underneath. After absorbing the native culture via television, the spacemen are ready to hit the dating scene in 1980s Los Angeles.",
-      "popularity": 3.4785,
-      "poster_path": "/lwFR24fEGf8Q6mGMsGcQuQTLL9T.jpg",
-      "release_date": "1988-09-08",
-      "softcore": false,
-      "video": false,
-      "vote_average": 5.6,
-      "vote_count": 418
-    },
-    {
-      "adult": false,
-      "backdrop_path": "/cyecB7godJ6kNHGONFjUyVN9OX5.jpg",
-      "genre_ids": [
-        28,
-        878,
-        12
-      ],
-      "id": 1726,
-      "title": "Iron Man",
-      "original_language": "en",
-      "original_title": "Iron Man",
-      "overview": "After being held captive in an Afghan cave, billionaire engineer Tony Stark creates a unique weaponized suit of armor to fight evil.",
-      "popularity": 39.3904,
-      "poster_path": "/78lPtwv72eTNqFW9COBYI0dWDJa.jpg",
-      "release_date": "2008-04-30",
-      "softcore": false,
-      "video": false,
-      "vote_average": 7.663,
-      "vote_count": 28409
-    },
-    {
-      "adult": false,
-      "backdrop_path": "/yFuKvT4Vm3sKHdFY4eG6I4ldAnn.jpg",
-      "genre_ids": [
-        28,
+        37,
         12,
-        878
-      ],
-      "id": 1771,
-      "title": "Captain America: The First Avenger",
-      "original_language": "en",
-      "original_title": "Captain America: The First Avenger",
-      "overview": "During World War II, Steve Rogers is a sickly man from Brooklyn who's transformed into super-soldier Captain America to aid in the war effort. Rogers must stop the Red Skull – Adolf Hitler's ruthless head of weaponry, and the leader of an organization that intends to use a mysterious device of untold powers for world domination.",
-      "popularity": 16.1238,
-      "poster_path": "/vSNxAJTlD0r02V9sPYpOjqDZXUK.jpg",
-      "release_date": "2011-07-22",
-      "softcore": false,
-      "video": false,
-      "vote_average": 7.01,
-      "vote_count": 22932
-    },
-    {
-      "adult": false,
-      "backdrop_path": "/wwLufumafJojc59hgIamHyJSTO9.jpg",
-      "genre_ids": [
-        9648,
-        10749,
-        878
-      ],
-      "id": 1903,
-      "title": "Vanilla Sky",
-      "original_language": "en",
-      "original_title": "Vanilla Sky",
-      "overview": "David Aames has it all: wealth, good looks and gorgeous women on his arm. But just as he begins falling for the warmhearted Sofia, his face is horribly disfigured in a car accident. That's just the beginning of his troubles as the lines between illusion and reality, between life and death, are blurred.",
-      "popularity": 8.615,
-      "poster_path": "/cAh2pCiNPftsY3aSqJuIOde7uWr.jpg",
-      "release_date": "2001-12-14",
-      "softcore": false,
-      "video": false,
-      "vote_average": 6.828,
-      "vote_count": 4736
-    },
-    {
-      "adult": false,
-      "backdrop_path": "/sjZIN2oDzOLGYuz21QwWw1tJ8ly.jpg",
-      "genre_ids": [
-        12,
-        36,
         28
       ],
-      "id": 1911,
-      "title": "The 13th Warrior",
+      "id": 22383,
+      "title": "The Professionals",
       "original_language": "en",
-      "original_title": "The 13th Warrior",
-      "overview": "A Muslim ambassador exiled from his homeland joins a group of Vikings, initially offended by their behavior but growing to respect them. As they travel together, they learn of a legendary evil closing in and must unite to confront this formidable force.",
-      "popularity": 7.7408,
-      "poster_path": "/pj1IQQ7ajwaOrjjTCxyM1L4mSnX.jpg",
-      "release_date": "1999-08-13",
+      "original_title": "The Professionals",
+      "overview": "An arrogant Texas millionaire hires four adventurers to rescue his kidnapped wife from a notorious Mexican bandit.",
+      "popularity": 4.0319,
+      "poster_path": "/sH4Clw7QrtH23xl9o4sOpHNkRIz.jpg",
+      "release_date": "1966-11-01",
       "softcore": false,
       "video": false,
-      "vote_average": 6.7,
-      "vote_count": 2081
+      "vote_average": 7.094,
+      "vote_count": 346
+    },
+    {
+      "adult": false,
+      "backdrop_path": "/fue9VR3v82qRo1Z4IOA5S3ffokE.jpg",
+      "genre_ids": [
+        18,
+        28,
+        80
+      ],
+      "id": 285221,
+      "title": "The Janitor",
+      "original_language": "tl",
+      "original_title": "The Janitor",
+      "overview": "Crisanto Espina, a cop on suspension and under investigation, is tasked to eliminate the suspects involved in a bank robbery/massacre that shocked the whole nation.",
+      "popularity": 0.3195,
+      "poster_path": "/u6Ri9UjorFpJhSJWEMpOE3uIB9Q.jpg",
+      "release_date": "2014-08-01",
+      "softcore": false,
+      "video": false,
+      "vote_average": 5.8,
+      "vote_count": 4
+    },
+    {
+      "adult": false,
+      "backdrop_path": "/mmhw9ekCTtysCJwaUvHuA0z32FM.jpg",
+      "genre_ids": [
+        28,
+        35
+      ],
+      "id": 22434,
+      "title": "If Looks Could Kill",
+      "original_language": "en",
+      "original_title": "If Looks Could Kill",
+      "overview": "Michael Corben, along with the rest of his high-school French class, sets out for a trip to France when he is mistaken for an agent of the same name. He is beseiged by both the good guys and the bad guys. British Intelligence outfits him with a series of James-Bond-like gizmos, and Steranko sends more would-be assassins after him. Can Michael stop the evil Steranko's plans for European domination?",
+      "popularity": 1.9493,
+      "poster_path": "/rTjcoGpHONeacV4zewHi1oSttW.jpg",
+      "release_date": "1991-03-15",
+      "softcore": false,
+      "video": false,
+      "vote_average": 6.154,
+      "vote_count": 179
+    },
+    {
+      "adult": false,
+      "backdrop_path": "/9ed8wL5zUIYBxPhLLi5tH9QQDqL.jpg",
+      "genre_ids": [
+        12,
+        14,
+        10751
+      ],
+      "id": 1025121,
+      "title": "Mateo's Night",
+      "original_language": "es",
+      "original_title": "La noche de Mateo",
+      "overview": "The world of dreams keeps Mateo locked up, will he be able to wake up?",
+      "popularity": 0.8399,
+      "poster_path": "/iaGJC61d4HOtUdXTS9sO5L1X7Jw.jpg",
+      "release_date": "2008-04-07",
+      "softcore": false,
+      "video": false,
+      "vote_average": 0,
+      "vote_count": 0
+    },
+    {
+      "adult": false,
+      "backdrop_path": "/wOjkbUL4tPioHwAIzDZaJsWkO8V.jpg",
+      "genre_ids": [
+        80,
+        18,
+        28
+      ],
+      "id": 832544,
+      "title": "Stealing Raden Saleh",
+      "original_language": "id",
+      "original_title": "Mencuri Raden Saleh",
+      "overview": "To get his father out of prison, a master forger assembles a diverse team of specialists to steal a priceless painting.",
+      "popularity": 1.0601,
+      "poster_path": "/66yOibmlqxASFoNyEZIORELJqBC.jpg",
+      "release_date": "2022-08-25",
+      "softcore": false,
+      "video": false,
+      "vote_average": 7.556,
+      "vote_count": 36
+    },
+    {
+      "adult": false,
+      "backdrop_path": null,
+      "genre_ids": [
+        28,
+        80,
+        9648,
+        53
+      ],
+      "id": 1210019,
+      "title": "Cornered",
+      "original_language": "en",
+      "original_title": "Cornered",
+      "overview": "A Los Angeles homicide detective must stop a government trained serial killer before the agency that trained him can cover it up.",
+      "popularity": 0.3901,
+      "poster_path": "/rCZv6uD5xfCG8udtx2rETzSI3fc.jpg",
+      "release_date": "2011-12-30",
+      "softcore": false,
+      "video": false,
+      "vote_average": 0,
+      "vote_count": 0
+    },
+    {
+      "adult": false,
+      "backdrop_path": "/xx287dW4k7eirA06lJbv9veJpCS.jpg",
+      "genre_ids": [
+        16,
+        28,
+        12,
+        10751,
+        878
+      ],
+      "id": 639999,
+      "title": "Ejen Ali: The Movie",
+      "original_language": "ms",
+      "original_title": "Ejen Ali: The Movie",
+      "overview": "As MATA seeks to upgrade its gadget for all agents, Ali embarks on a mission to stop a plot against Cyberaya but begins to question his loyalty.",
+      "popularity": 1.9747,
+      "poster_path": "/cYdGwCMR1DD3Vg61zrR3NsyrJal.jpg",
+      "release_date": "2019-11-28",
+      "softcore": false,
+      "video": false,
+      "vote_average": 8.16,
+      "vote_count": 25
+    },
+    {
+      "adult": false,
+      "backdrop_path": "/1qKTp9G1hrCxindF0xpsZGKbSsL.jpg",
+      "genre_ids": [
+        28,
+        18,
+        80
+      ],
+      "id": 25047,
+      "title": "Le Deuxième Souffle",
+      "original_language": "fr",
+      "original_title": "Le Deuxième Souffle",
+      "overview": "A gangster escapes jail and quickly makes plans to continue his criminal ways elsewhere, but a determined inspector is closing in.",
+      "popularity": 1.5913,
+      "poster_path": "/yuTl6T6BnRdCqyGMJvSmLkAgSaS.jpg",
+      "release_date": "1966-11-01",
+      "softcore": false,
+      "video": false,
+      "vote_average": 7.681,
+      "vote_count": 207
+    },
+    {
+      "adult": false,
+      "backdrop_path": "/9t5IQQ4CcCXXgZIdEg1POTLHqMF.jpg",
+      "genre_ids": [
+        35,
+        28
+      ],
+      "id": 639832,
+      "title": "Undercover Brother 2",
+      "original_language": "en",
+      "original_title": "Undercover Brother 2",
+      "overview": "Sixteen years ago, Undercover Brother and his younger brother were hot on the heels of the leader of a racist, worldwide syndicate, but accidentally got caught in an avalanche of white snow. After they were discovered and thawed out, Undercover Brother remained in a coma. Now, it is up to his little brother to finish the job they started.",
+      "popularity": 1.3887,
+      "poster_path": "/qHoCC9A8s00VqulXvSJOrnVXQgB.jpg",
+      "release_date": "2019-11-05",
+      "softcore": false,
+      "video": false,
+      "vote_average": 4.4,
+      "vote_count": 35
     }
   ],
   "providers": {
@@ -2522,12 +2532,12 @@
 
 ---
 
-### 8. AI Recommendation Engine
+### 9. AI Recommendation Engine
 
 - **Endpoint**: `POST /api/recommend`
 - **Target URL**: `https://sequel-backend.vercel.app/api/recommend`
 - **HTTP Status**: `200` (✅ PASS)
-- **Response Time**: `476ms`
+- **Response Time**: `238ms`
 
 **Request Payload**:
 ```json
@@ -2617,12 +2627,12 @@
 
 ---
 
-### 9. 404 Error Handling Verification
+### 10. 404 Error Handling Verification
 
 - **Endpoint**: `GET /api/non-existent-endpoint`
 - **Target URL**: `https://sequel-backend.vercel.app/api/non-existent-endpoint`
 - **HTTP Status**: `404` (✅ PASS)
-- **Response Time**: `320ms`
+- **Response Time**: `252ms`
 
 **Response Body**:
 ```json
