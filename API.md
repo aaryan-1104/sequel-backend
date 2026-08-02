@@ -12,7 +12,7 @@ Welcome to the **Sequel / Chronicle Backend API** documentation. This service is
 2. [System & Health Endpoints](#2-system--health-endpoints)
 3. [User Authentication & Cloud Sync](#3-user-authentication--cloud-sync)
 4. [Media Search & AI Intelligence](#4-media-search--ai-intelligence)
-5. [TMDB Media Integration](#5-tmdb-media-integration)
+5. [TMDB Media Integration (Cast, Trailers, Reviews & Details)](#5-tmdb-media-integration-cast-trailers-reviews--details)
 6. [TMDB Account & Custom Lists](#6-tmdb-account--custom-lists)
 
 ---
@@ -291,10 +291,10 @@ Generates custom artwork and backdrop image URLs using Google Gemini AI.
 
 ---
 
-## 5. TMDB Media Integration
+## 5. TMDB Media Integration (Cast, Trailers, Reviews & Details)
 
 ### `POST /api/tmdb-details`
-Fetches complete metadata for a movie or TV show from TMDB (including cast, crew, reviews, videos, and recommendations).
+Fetches complete metadata for a movie or TV show from TMDB, including **Cast**, **Directors/Creators**, **Trailers & Videos**, **User Reviews**, **Streaming Providers**, **Similar Media**, **Age Rating**, and **IMDb ID**.
 
 **Request Body**:
 ```json
@@ -304,10 +304,86 @@ Fetches complete metadata for a movie or TV show from TMDB (including cast, crew
 }
 ```
 
+**Response `(200 OK)`**:
+```json
+{
+  "rating": 8.373,
+  "runtime": 148,
+  "genres": ["Action", "Science Fiction", "Adventure"],
+  "creators": ["Christopher Nolan"],
+  "ageRating": "PG-13",
+  "imdbId": "tt1375666",
+  "cast": [
+    {
+      "id": 6193,
+      "name": "Leonardo DiCaprio",
+      "character": "Dom Cobb",
+      "profile_path": "/wo2hJpn04vbtmh0B9utCFdsQhxM.jpg",
+      "order": 0
+    },
+    {
+      "id": 27578,
+      "name": "Joseph Gordon-Levitt",
+      "character": "Arthur",
+      "profile_path": "/dhv9VNmF4n7tZ2hR90k5B8R6x8L.jpg",
+      "order": 1
+    }
+  ],
+  "videos": [
+    {
+      "id": "533ec654c3a36854480003b6",
+      "iso_639_1": "en",
+      "key": "YoHD9XEInc0",
+      "name": "Official Trailer",
+      "site": "YouTube",
+      "type": "Trailer",
+      "official": true
+    }
+  ],
+  "reviews": [
+    {
+      "id": "5f1b1c3e03bf8400350a4d1f",
+      "author": "movie_buff",
+      "content": "A masterpiece of modern sci-fi cinema...",
+      "created_at": "2020-07-24T17:10:54.000Z",
+      "author_details": {
+        "rating": 10
+      }
+    }
+  ],
+  "similar": [
+    {
+      "id": 157336,
+      "title": "Interstellar",
+      "poster_path": "/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg",
+      "vote_average": 8.4
+    }
+  ],
+  "providers": {
+    "streaming": [
+      {
+        "name": "Max",
+        "logo": "/8z7rC8uOFrm5pp9fC7v53M9L6a.jpg"
+      }
+    ],
+    "buy": [
+      {
+        "name": "Apple TV",
+        "logo": "/peWZgB9W799i04q2PjW0z.jpg"
+      }
+    ]
+  },
+  "networks": [],
+  "numberOfEpisodes": null,
+  "numberOfSeasons": null,
+  "seasons": []
+}
+```
+
 ---
 
 ### `POST /api/tmdb-season`
-Fetches season episode listings and details for a TV series.
+Fetches detailed season information and episode listings for a TV series.
 
 **Request Body**:
 ```json
@@ -317,15 +393,56 @@ Fetches season episode listings and details for a TV series.
 }
 ```
 
+**Response `(200 OK)`**:
+```json
+{
+  "id": 3624,
+  "name": "Season 1",
+  "air_date": "2011-04-17",
+  "episodes": [
+    {
+      "episode_number": 1,
+      "name": "Winter Is Coming",
+      "overview": "Lord Eddard Stark is torn between his family and an old friend...",
+      "still_path": "/25j0tC6fN4849gY.jpg",
+      "vote_average": 7.8,
+      "runtime": 62
+    }
+  ]
+}
+```
+
 ---
 
 ### `POST /api/tmdb-person`
-Fetches actor/person details, biography, and filmography.
+Fetches actor or crew member biography, profile photo, and full filmography.
 
 **Request Body**:
 ```json
 {
   "personId": 6193
+}
+```
+
+**Response `(200 OK)`**:
+```json
+{
+  "id": 6193,
+  "name": "Leonardo DiCaprio",
+  "biography": "Leonardo Wilhelm DiCaprio is an American actor...",
+  "birthday": "1974-11-11",
+  "place_of_birth": "Los Angeles, California, USA",
+  "profile_path": "/wo2hJpn04vbtmh0B9utCFdsQhxM.jpg",
+  "movie_credits": {
+    "cast": [
+      {
+        "id": 27205,
+        "title": "Inception",
+        "character": "Dom Cobb",
+        "release_date": "2010-07-15"
+      }
+    ]
+  }
 }
 ```
 
