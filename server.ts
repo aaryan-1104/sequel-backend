@@ -19,6 +19,36 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
+app.get("/", (req, res) => {
+  res.json({
+    name: "Sequel / Chronicle Backend API",
+    status: "online",
+    version: "1.0.0",
+    endpoints: [
+      "/api/status",
+      "/api/health",
+      "/api/firebase-check",
+      "/api/search",
+      "/api/discover",
+      "/api/tmdb-details",
+      "/api/recommend",
+      "/api/generate-cover",
+      "/api/auth/register",
+      "/api/auth/login",
+      "/api/auth/sync-get",
+      "/api/auth/sync-save"
+    ]
+  });
+});
+
+app.get("/api/status", (req, res) => {
+  res.json({
+    name: "Sequel / Chronicle Backend API",
+    status: "online",
+    version: "1.0.0"
+  });
+});
+
 // API Endpoint: Health check
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", geminiEnabled: !!getGeminiClient() });
