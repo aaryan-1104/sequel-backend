@@ -22,7 +22,33 @@ const PORT = process.env.PORT || 3000;
 // Security and Performance Middleware
 app.use(helmet());
 app.use(compression());
-app.use(cors());
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (e.g., curl, mobile apps)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
+      'https://sequel.app',
+      'https://www.sequel.app',
+      'https://sequel-web.vercel.app',
+      'https://chr0nicle.vercel.app'
+    ];
+    
+    // Allow specific production domains, localhost, and local network IPs (like 192.168.x.x)
+    if (
+      allowedOrigins.includes(origin) || 
+      origin.startsWith('http://localhost:') || 
+      origin.startsWith('http://192.168.') ||
+      origin.startsWith('http://127.0.0.1:') ||
+      origin.match(/^https:\/\/sequel-.*\.vercel\.app$/) // Allow Vercel preview deployments
+    ) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true
+}));
 app.use(express.json());
 
 // Global Rate Limiting: 600 requests per 15 minutes
