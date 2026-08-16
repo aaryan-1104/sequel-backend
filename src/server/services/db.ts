@@ -35,25 +35,6 @@ export async function findUserByUsernameOrEmail(identifier: string): Promise<DbU
   identifier = identifier.toLowerCase().trim();
   const isAdmin = identifier === "pseudo-user@gmail.com";
 
-  if (isAdmin) {
-    let adminUser = inMemoryUsers.get("admin-pseudo-user");
-    if (!adminUser) {
-      adminUser = {
-        id: "admin-pseudo-user",
-        username: "pseudo-user",
-        email: "pseudo-user@gmail.com",
-        salt: "",
-        hash: "",
-        avatar: "👑",
-        bio: "Admin User",
-        genres: "All Categories",
-        createdAt: new Date().toISOString()
-      };
-      inMemoryUsers.set(adminUser.id, adminUser);
-    }
-    return adminUser;
-  }
-
   if (adminDb) {
     try {
       let snapshot = await withTimeout(adminDb.collection("users").where("usernameLowerCase", "==", identifier).limit(1).get());
@@ -69,6 +50,25 @@ export async function findUserByUsernameOrEmail(identifier: string): Promise<DbU
     if (user.username.toLowerCase() === identifier || (user.email && user.email.toLowerCase() === identifier)) {
       return user;
     }
+  }
+
+  if (isAdmin) {
+    const adminUser: DbUser = {
+      id: "admin-pseudo-user",
+      username: "pseudo-user",
+      email: "pseudo-user@gmail.com",
+      salt: "",
+      hash: "",
+      avatar: "👑",
+      bio: "Admin User",
+      genres: "All Categories",
+      createdAt: new Date().toISOString()
+    };
+    inMemoryUsers.set(adminUser.id, adminUser);
+    if (adminDb) {
+      saveUser(adminUser).catch(() => {});
+    }
+    return adminUser;
   }
 
   return null;
