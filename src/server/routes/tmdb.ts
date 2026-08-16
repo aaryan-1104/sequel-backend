@@ -402,8 +402,8 @@ const DETAILS_CACHE = new Map<string, { timestamp: number; data: any }>();
 const DETAILS_CACHE_TTL = 30 * 60 * 1000;
 
 // API Endpoint: Get Detailed Book & Audiobook Metadata (iTunes API + Google Books)
-router.post("/tmdb-details", async (req, res) => {
-  const { tmdbId, type } = req.body;
+router.all("/tmdb-details", async (req, res) => {
+  const { tmdbId, type } = Object.keys(req.body).length > 0 ? req.body : req.query;
   if (!tmdbId || !process.env.TMDB_API_KEY || (type !== 'movie' && type !== 'tv')) {
     return res.status(400).json({ error: "Invalid request or TMDB API key missing." });
   }
@@ -519,8 +519,8 @@ router.post("/tmdb-details", async (req, res) => {
 const SEASON_CACHE = new Map<string, { timestamp: number; data: any }>();
 const SEASON_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
-router.post("/tmdb-season", async (req, res) => {
-  const { tmdbId, seasonNumber } = req.body;
+router.all("/tmdb-season", async (req, res) => {
+  const { tmdbId, seasonNumber } = Object.keys(req.body).length > 0 ? req.body : req.query;
   if (!tmdbId || seasonNumber === undefined || !process.env.TMDB_API_KEY) {
     return res.status(400).json({ error: "Invalid request" });
   }
@@ -1995,8 +1995,8 @@ const TMDB_GENRES: { [key: number]: string } = {
 const CATEGORY_CACHE = new Map<string, { timestamp: number, data: any }>();
 const CACHE_TTL = 1000 * 60 * 60; // 1 hour
 
-router.post("/tmdb-category", async (req, res) => {
-  const { category, page = 1 } = req.body;
+router.all("/tmdb-category", async (req, res) => {
+  const { category, page = 1 } = Object.keys(req.body).length > 0 ? req.body : req.query;
   
   res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
   
