@@ -19,7 +19,7 @@ const router = Router();
 
 router.all("/search", async (req, res) => {
   res.setHeader("Cache-Control", "public, s-maxage=600, stale-while-revalidate=3600");
-  const { query, type, useAI } = Object.keys(req.body).length > 0 ? req.body : req.query;
+  const { query, type, useAI } = (req.body && Object.keys(req.body).length > 0) ? req.body : req.query;
   if (!query) {
     return res.status(400).json({ error: "Search query is required." });
   }
