@@ -186,7 +186,7 @@ const fetchNYTBooks = async (pageNum: number = 1, category: string = 'trending')
     try {
       let lists: string[] = [];
       if (category === 'youngAdult' || category === 'youngAdultBooks') {
-        lists = ['young-adult-hardcover', 'young-adult-paperback-monthly'];
+        lists = ['young-adult-hardcover'];
       } else if (category === 'fiction' || category === 'fictionBooks') {
         lists = ['hardcover-fiction', 'combined-print-and-e-book-fiction', 'trade-fiction-paperback'];
       } else if (category === 'nonfiction' || category === 'nonFictionBooks') {
@@ -408,6 +408,8 @@ router.post("/tmdb-details", async (req, res) => {
     return res.status(400).json({ error: "Invalid request or TMDB API key missing." });
   }
 
+  res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
+
   const cleanId = tmdbId.toString().replace(/^(tmdb-tv-|tmdb-movie-|tmdb-|lib-|temp-|custom-|imported-|movie-|tv-)/, '').trim();
   if (!/^\d+$/.test(cleanId)) {
     return res.status(400).json({ error: "Invalid numeric TMDB ID." });
@@ -522,6 +524,8 @@ router.post("/tmdb-season", async (req, res) => {
   if (!tmdbId || seasonNumber === undefined || !process.env.TMDB_API_KEY) {
     return res.status(400).json({ error: "Invalid request" });
   }
+
+  res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
 
   const cacheKey = `${tmdbId}-season-${seasonNumber}`;
   const now = Date.now();
@@ -1596,6 +1600,7 @@ const TMDB_CACHE_TTL = 15 * 60 * 1000; // 15 minutes
 
 // API Endpoint: Discover Feed (Trending, Top Rated, Upcoming, TV Airing Today, Sci-Fi)
 router.get("/tmdb-discover", async (req, res) => {
+  res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
   const now = Date.now();
   const forceRefresh = req.query.nocache === 'true' || req.query.refresh === 'true';
   const page = parseInt(req.query.page as string || '1', 10);
@@ -1992,6 +1997,8 @@ const CACHE_TTL = 1000 * 60 * 60; // 1 hour
 
 router.post("/tmdb-category", async (req, res) => {
   const { category, page = 1 } = req.body;
+  
+  res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
   
   const cacheKey = `${category}-${page}`;
   if (CATEGORY_CACHE.has(cacheKey)) {

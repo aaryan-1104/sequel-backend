@@ -1,6 +1,9 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import helmet from "helmet";
+import compression from "compression";
+import rateLimit from "express-rate-limit";
 
 import { firebaseAdminInitialized } from "./src/server/config/firebase.js";
 import { getGeminiClient } from "./src/server/config/gemini.js";
@@ -16,8 +19,21 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Security and Performance Middleware
+app.use(helmet());
+app.use(compression());
 app.use(cors());
 app.use(express.json());
+
+// Global Rate Limiting: 600 requests per 15 minutes
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 600,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later." }
+});
+app.use(globalLimiter);
 
 app.get("/", (req, res) => {
   res.json({

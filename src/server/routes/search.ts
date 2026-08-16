@@ -18,6 +18,7 @@ const OFFLINE_SEARCH_RESULTS: Record<string, any[]> = {
 const router = Router();
 
 router.post("/search", async (req, res) => {
+  res.setHeader("Cache-Control", "public, s-maxage=600, stale-while-revalidate=3600");
   const { query, type, useAI } = req.body;
   if (!query) {
     return res.status(400).json({ error: "Search query is required." });

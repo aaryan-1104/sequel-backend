@@ -1,10 +1,19 @@
 import { Router } from "express";
 import { Type } from "@google/genai";
+import rateLimit from "express-rate-limit";
 import { getGeminiClient } from "../config/gemini.js";
 
 const router = Router();
 
-router.post("/diary/generate-insight", async (req, res) => {
+const aiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 50,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "AI generation rate limit exceeded. Please try again later." }
+});
+
+router.post("/diary/generate-insight", aiLimiter, async (req, res) => {
   const { title, type, notes } = req.body;
   if (!notes) {
     return res.status(400).json({ error: "User notes/thoughts are required." });
@@ -57,7 +66,7 @@ Analyze their notes and generate:
   }
 });
 
-router.post("/generate-cover", async (req, res) => {
+router.post("/generate-cover", aiLimiter, async (req, res) => {
   const { title, type } = req.body;
   if (!title) {
     return res.status(400).json({ error: "Title is required." });
