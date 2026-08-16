@@ -3,3 +3,9 @@ dist/
 .env
 .DS_Store
 *.log
+
+# Agent & AI Configuration
+GEMINI.md
+AGENTS.md
+.agents/
+.gemini/
