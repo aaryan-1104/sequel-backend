@@ -498,6 +498,13 @@ router.all("/tmdb-details", async (req, res) => {
         numberOfEpisodes: tmdbData.number_of_episodes || null,
         numberOfSeasons: tmdbData.number_of_seasons || null,
         seasons: tmdbData.seasons || [],
+        nextEpisodeAirDate: tmdbData.next_episode_to_air?.air_date || null,
+        nextEpisode: tmdbData.next_episode_to_air ? {
+          seasonNumber: tmdbData.next_episode_to_air.season_number,
+          episodeNumber: tmdbData.next_episode_to_air.episode_number,
+          name: tmdbData.next_episode_to_air.name,
+          airDate: tmdbData.next_episode_to_air.air_date,
+        } : null,
         ageRating,
         imdbId
       };
