@@ -1,6 +1,9 @@
 import { Router } from "express";
 const router = Router();
 
+// Server-side persistent book details cache
+const BOOK_DETAILS_CACHE = new Map<string, any>();
+
 router.post("/book-details", async (req, res) => {
   const { title, author, creators, type } = req.body;
   if (!title) {
@@ -9,6 +12,12 @@ router.post("/book-details", async (req, res) => {
 
   const mainAuthor = author || (Array.isArray(creators) && creators[0]) || "";
   const searchTerm = `${title} ${mainAuthor}`.trim();
+  const cacheKey = searchTerm.toLowerCase();
+
+  if (BOOK_DETAILS_CACHE.has(cacheKey)) {
+    return res.json(BOOK_DETAILS_CACHE.get(cacheKey));
+  }
+
   const q = encodeURIComponent(searchTerm);
 
   try {
@@ -17,6 +26,7 @@ router.post("/book-details", async (req, res) => {
     let audiobookAvailable = null;
     let bookSpecifics: any = null;
     let previewLink = "";
+
 
     // Parallel requests to iTunes Ebook, iTunes Audiobook, and Google Books
     const [itunesEbookRes, itunesAudiobookRes, gbooksRes] = await Promise.all([
@@ -163,12 +173,15 @@ router.post("/book-details", async (req, res) => {
       }
     }
 
-    return res.json({
+    const payload = {
       synopsis,
       coverUrl,
       audiobookAvailable,
       bookSpecifics,
-    });
+    };
+
+    BOOK_DETAILS_CACHE.set(cacheKey, payload);
+    return res.json(payload);
   } catch (err) {
     console.error("Error fetching book details:", err);
     return res.status(500).json({ error: "Failed to fetch book details" });
