@@ -13,6 +13,7 @@ import tmdbRouter from "./src/server/routes/tmdb.js";
 import aiRouter from "./src/server/routes/ai.js";
 import booksRouter from "./src/server/routes/books.js";
 import searchRouter from "./src/server/routes/search.js";
+import recommendationsRouter from "./src/server/routes/recommendations.js";
 
 dotenv.config();
 
@@ -113,6 +114,7 @@ app.use("/api", tmdbRouter);
 app.use("/api", searchRouter);
 app.use("/api", booksRouter);
 app.use("/api", aiRouter);
+app.use("/api", recommendationsRouter);
 
 // API 404 fallback handler to ensure /api/* requests return JSON
 app.all("/api/*", (req, res) => {
