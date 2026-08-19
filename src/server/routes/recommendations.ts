@@ -3,7 +3,8 @@ import { Router, Request, Response } from "express";
 const router = Router();
 
 // In-memory cache for candidate discovery pools (5 min TTL)
-const CANDIDATE_CACHE = new Map<string, { data: any[]; timestamp: number }>();
+const CANDIDATE_CACHE = new Map<string, { data: CandidateItem[]; timestamp: number }>();
+const IN_FLIGHT_PROMISES = new Map<string, Promise<CandidateItem[]>>();
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
 interface CandidateItem {
@@ -22,16 +23,21 @@ interface CandidateItem {
   rating?: number;
 }
 
-// Fetch TMDB Candidates (Movies & TV)
-async function fetchTmdbCandidates(type: 'movie' | 'tv'): Promise<CandidateItem[]> {
+// Fetch TMDB Candidates (Movies & TV) with in-flight deduplication
+function fetchTmdbCandidates(type: 'movie' | 'tv'): Promise<CandidateItem[]> {
   const cacheKey = `tmdb_candidates_${type}`;
   const cached = CANDIDATE_CACHE.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-    return cached.data;
+    return Promise.resolve(cached.data);
+  }
+
+  // Deduplicate concurrent in-flight fetches
+  if (IN_FLIGHT_PROMISES.has(cacheKey)) {
+    return IN_FLIGHT_PROMISES.get(cacheKey)!;
   }
 
   const rawKey = process.env.TMDB_API_KEY || '';
-  if (!rawKey) return [];
+  if (!rawKey) return Promise.resolve([]);
 
   const tmdbKey = rawKey.replace(/^Bearer\s+/i, '').trim();
   const isBearer = tmdbKey.length > 40;
@@ -47,96 +53,115 @@ async function fetchTmdbCandidates(type: 'movie' | 'tv'): Promise<CandidateItem[
     `https://api.themoviedb.org/3/${type}/popular?language=en-US&page=1${keyParam}`
   ];
 
-  const candidatesMap = new Map<string, CandidateItem>();
+  const promise = (async () => {
+    try {
+      const candidatesMap = new Map<string, CandidateItem>();
 
-  await Promise.all(
-    endpoints.map(async (url) => {
-      try {
-        const res = await fetch(url, { headers, signal: AbortSignal.timeout(5000) });
-        if (res.ok) {
-          const data = await res.json();
-          for (const item of data.results || []) {
-            const isTV = type === 'tv';
-            const title = item.title || item.name || item.original_name;
-            if (!title || !item.poster_path) continue;
+      await Promise.all(
+        endpoints.map(async (url) => {
+          try {
+            const res = await fetch(url, { headers, signal: AbortSignal.timeout(5000) });
+            if (res.ok) {
+              const data = await res.json();
+              for (const item of data.results || []) {
+                const title = item.title || item.name || item.original_name;
+                if (!title || !item.poster_path) continue;
 
-            const id = `tmdb-${type}-${item.id}`;
-            if (!candidatesMap.has(id)) {
-              candidatesMap.set(id, {
-                id,
-                title,
-                type,
-                releaseDate: item.release_date || item.first_air_date || '',
-                synopsis: item.overview || '',
-                overview: item.overview || '',
-                coverUrl: `https://image.tmdb.org/t/p/w500${item.poster_path}`,
-                backdropUrl: item.backdrop_path ? `https://image.tmdb.org/t/p/w1280${item.backdrop_path}` : '',
-                genres: (item.genre_ids || []).map((gid: number) => GENRE_ID_MAP[gid] || 'General'),
-                creators: [],
-                platforms: [],
-                voteAverage: item.vote_average || 7.0,
-                rating: item.vote_average || 7.0
-              });
+                const id = `tmdb-${type}-${item.id}`;
+                if (!candidatesMap.has(id)) {
+                  candidatesMap.set(id, {
+                    id,
+                    title,
+                    type,
+                    releaseDate: item.release_date || item.first_air_date || '',
+                    synopsis: item.overview || '',
+                    overview: item.overview || '',
+                    coverUrl: `https://image.tmdb.org/t/p/w500${item.poster_path}`,
+                    backdropUrl: item.backdrop_path ? `https://image.tmdb.org/t/p/w1280${item.backdrop_path}` : '',
+                    genres: (item.genre_ids || []).map((gid: number) => GENRE_ID_MAP[gid] || 'General'),
+                    creators: [],
+                    platforms: [],
+                    voteAverage: item.vote_average || 7.0,
+                    rating: item.vote_average || 7.0
+                  });
+                }
+              }
             }
+          } catch (err) {
+            console.warn(`[Recommendations] Failed fetching ${url}:`, err);
           }
-        }
-      } catch (err) {
-        console.warn(`[Recommendations] Failed fetching ${url}:`, err);
-      }
-    })
-  );
+        })
+      );
 
-  const results = Array.from(candidatesMap.values());
-  CANDIDATE_CACHE.set(cacheKey, { data: results, timestamp: Date.now() });
-  return results;
+      const results = Array.from(candidatesMap.values());
+      CANDIDATE_CACHE.set(cacheKey, { data: results, timestamp: Date.now() });
+      return results;
+    } finally {
+      IN_FLIGHT_PROMISES.delete(cacheKey);
+    }
+  })();
+
+  IN_FLIGHT_PROMISES.set(cacheKey, promise);
+  return promise;
 }
 
-// Fetch Book Candidates (Apple Books Bestsellers RSS)
-async function fetchBookCandidates(): Promise<CandidateItem[]> {
+// Fetch Book Candidates (Apple Books Bestsellers RSS) with in-flight deduplication
+function fetchBookCandidates(): Promise<CandidateItem[]> {
   const cacheKey = 'book_candidates';
   const cached = CANDIDATE_CACHE.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-    return cached.data;
+    return Promise.resolve(cached.data);
   }
 
-  try {
-    const url = 'https://itunes.apple.com/us/rss/toppaidebooks/limit=60/json';
-    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
-    if (res.ok) {
-      const data = await res.json();
-      const rawEntries = data.feed?.entry || [];
-      const books: CandidateItem[] = rawEntries.map((e: any, idx: number) => {
-        const rawTitle = e["im:name"]?.label || "";
-        const rawAuthor = e["im:artist"]?.label || "";
-        const rawCover = e["im:image"]?.[2]?.label || "";
-        const coverUrl = rawCover.replace(/\/0x170bb\.png$/i, "/600x600bb.jpg").replace(/\/170x170bb\.png$/i, "/600x600bb.jpg");
-        const genre = e.category?.attributes?.label || "Fiction";
-        const id = e.id?.attributes?.["im:id"] || `itunes-book-${idx}`;
+  if (IN_FLIGHT_PROMISES.has(cacheKey)) {
+    return IN_FLIGHT_PROMISES.get(cacheKey)!;
+  }
 
-        return {
-          id: `itunes-book-${id}`,
-          title: rawTitle,
-          type: "book" as const,
-          releaseDate: e["im:releaseDate"]?.label?.substring(0, 10) || new Date().toISOString().substring(0, 10),
-          synopsis: e.summary?.label || "Bestselling book edition.",
-          overview: e.summary?.label || "Bestselling book edition.",
-          coverUrl: coverUrl || "https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=500&auto=format&fit=crop&q=80",
-          backdropUrl: "https://images.unsplash.com/photo-1497633762265-9d179a990aa6?w=1200&auto=format&fit=crop&q=80",
-          genres: [genre, "Bestseller"],
-          creators: [rawAuthor],
-          platforms: ["Print", "Kindle", "Apple Books"],
-          voteAverage: 8.5,
-          rating: 8.5
-        };
-      });
+  const promise = (async () => {
+    try {
+      const url = 'https://itunes.apple.com/us/rss/toppaidebooks/limit=60/json';
+      const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      if (res.ok) {
+        const data = await res.json();
+        const rawEntries = data.feed?.entry || [];
+        const books: CandidateItem[] = rawEntries.map((e: any, idx: number) => {
+          const rawTitle = e["im:name"]?.label || "";
+          const rawAuthor = e["im:artist"]?.label || "";
+          const rawCover = e["im:image"]?.[2]?.label || "";
+          const coverUrl = rawCover.replace(/\/0x170bb\.png$/i, "/600x600bb.jpg").replace(/\/170x170bb\.png$/i, "/600x600bb.jpg");
+          const genre = e.category?.attributes?.label || "Fiction";
+          const id = e.id?.attributes?.["im:id"] || `itunes-book-${idx}`;
 
-      CANDIDATE_CACHE.set(cacheKey, { data: books, timestamp: Date.now() });
-      return books;
+          return {
+            id: `itunes-book-${id}`,
+            title: rawTitle,
+            type: "book" as const,
+            releaseDate: e["im:releaseDate"]?.label?.substring(0, 10) || new Date().toISOString().substring(0, 10),
+            synopsis: e.summary?.label || "Bestselling book edition.",
+            overview: e.summary?.label || "Bestselling book edition.",
+            coverUrl: coverUrl || "https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=500&auto=format&fit=crop&q=80",
+            backdropUrl: "https://images.unsplash.com/photo-1497633762265-9d179a990aa6?w=1200&auto=format&fit=crop&q=80",
+            genres: [genre, "Bestseller"],
+            creators: [rawAuthor],
+            platforms: ["Print", "Kindle", "Apple Books"],
+            voteAverage: 8.5,
+            rating: 8.5
+          };
+        });
+
+        CANDIDATE_CACHE.set(cacheKey, { data: books, timestamp: Date.now() });
+        return books;
+      }
+    } catch (err) {
+      console.warn('[Recommendations] Failed fetching book candidates:', err);
+    } finally {
+      IN_FLIGHT_PROMISES.delete(cacheKey);
     }
-  } catch (err) {
-    console.warn('[Recommendations] Failed fetching book candidates:', err);
-  }
-  return [];
+    return [];
+  })();
+
+  IN_FLIGHT_PROMISES.set(cacheKey, promise);
+  return promise;
 }
 
 const GENRE_ID_MAP: Record<number, string> = {
@@ -155,7 +180,7 @@ router.post("/recommendations", async (req: Request, res: Response) => {
   try {
     const { library = [], mediaType, limit = 30 } = req.body;
 
-    // 1. Gather all candidates across media types
+    // 1. Gather all candidates across media types with fast concurrent fetching & deduplication
     let candidates: CandidateItem[] = [];
     if (!mediaType || mediaType === 'all') {
       const [movies, tv, books] = await Promise.all([
