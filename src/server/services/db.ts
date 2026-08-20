@@ -177,31 +177,56 @@ export async function getUserData(userId: string) {
         return {
           library: data.library || [],
           diary: data.diary || [],
-          customLists: data.customLists || []
+          customLists: data.customLists || [],
+          customCollections: data.customCollections || [],
+          dismissedRecommendations: data.dismissedRecommendations || [],
+          settings: data.settings || {}
         };
       }
     } catch (err: any) {
       console.error("Firestore error (getUserData):", err.message);
     }
   }
-  return inMemoryUserData.get(userId) || { library: [], diary: [], customLists: [] };
+  return inMemoryUserData.get(userId) || { library: [], diary: [], customLists: [], customCollections: [], dismissedRecommendations: [], settings: {} };
 }
 
-export async function saveUserData(userId: string, library?: any[], diary?: any[], customLists?: any[]) {
-  const existing = inMemoryUserData.get(userId) || { library: [], diary: [], customLists: [] };
+export async function saveUserData(
+  userId: string,
+  library?: any[],
+  diary?: any[],
+  customLists?: any[],
+  dismissedRecommendations?: any[],
+  customCollections?: any[],
+  settings?: any
+) {
+  const existing = inMemoryUserData.get(userId) || {
+    library: [],
+    diary: [],
+    customLists: [],
+    customCollections: [],
+    dismissedRecommendations: [],
+    settings: {}
+  };
+
   const updated = {
     library: library !== undefined ? library : existing.library,
     diary: diary !== undefined ? diary : existing.diary,
-    customLists: customLists !== undefined ? customLists : existing.customLists
+    customLists: customLists !== undefined ? customLists : existing.customLists,
+    customCollections: customCollections !== undefined ? customCollections : existing.customCollections,
+    dismissedRecommendations: dismissedRecommendations !== undefined ? dismissedRecommendations : existing.dismissedRecommendations,
+    settings: settings !== undefined ? settings : existing.settings
   };
   inMemoryUserData.set(userId, updated);
 
   if (adminDb) {
     try {
       const update: any = {};
-      if (library) update.library = library;
-      if (diary) update.diary = diary;
-      if (customLists) update.customLists = customLists;
+      if (library !== undefined) update.library = library;
+      if (diary !== undefined) update.diary = diary;
+      if (customLists !== undefined) update.customLists = customLists;
+      if (customCollections !== undefined) update.customCollections = customCollections;
+      if (dismissedRecommendations !== undefined) update.dismissedRecommendations = dismissedRecommendations;
+      if (settings !== undefined) update.settings = settings;
       await withTimeout(adminDb.collection("user_data").doc(userId).set(update, { merge: true }));
       return;
     } catch (err: any) {

@@ -330,9 +330,9 @@ router.post("/update-profile", async (req, res) => {
   });
 });
 
-// SYNC DATA GET
+// SYNC DATA GET (Supports Partitioned / Scoped Hydration)
 router.post("/sync-get", async (req, res) => {
-  const { token } = req.body;
+  const { token, scope = "all", fields } = req.body;
   if (!token) {
     return res.status(401).json({ error: "Unauthorized." });
   }
@@ -342,13 +342,45 @@ router.post("/sync-get", async (req, res) => {
     return res.status(401).json({ error: "Invalid session." });
   }
 
-  const data = await getUserData(userId);
+  const data: any = await getUserData(userId);
+
+  // If explicit fields requested
+  if (Array.isArray(fields) && fields.length > 0) {
+    const filtered: Record<string, any> = {};
+    for (const f of fields) {
+      if (data[f] !== undefined) filtered[f] = data[f];
+    }
+    return res.json(filtered);
+  }
+
+  // Scoped partitioning to eliminate unnecessary network payload on dashboard
+  if (scope === "dashboard") {
+    return res.json({
+      library: data.library || [],
+      customCollections: data.customCollections || [],
+      dismissedRecommendations: data.dismissedRecommendations || [],
+      settings: data.settings || {}
+    });
+  }
+
+  if (scope === "diary") {
+    return res.json({
+      diary: data.diary || []
+    });
+  }
+
+  if (scope === "lists") {
+    return res.json({
+      customLists: data.customLists || []
+    });
+  }
+
   return res.json(data);
 });
 
 // SYNC DATA SAVE
 router.post("/sync-save", async (req, res) => {
-  const { token, library, diary, customLists } = req.body;
+  const { token, library, diary, customLists, dismissedRecommendations, customCollections, settings } = req.body;
   if (!token) {
     return res.status(401).json({ error: "Unauthorized." });
   }
@@ -358,7 +390,7 @@ router.post("/sync-save", async (req, res) => {
     return res.status(401).json({ error: "Invalid session." });
   }
 
-  await saveUserData(userId, library, diary, customLists);
+  await saveUserData(userId, library, diary, customLists, dismissedRecommendations, customCollections, settings);
   return res.json({ success: true });
 });
 
