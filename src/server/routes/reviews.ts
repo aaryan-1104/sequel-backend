@@ -20,6 +20,66 @@ interface ReviewItem {
 }
 
 /**
+ * Fetch Authentic Critic Scores (Rotten Tomatoes, Metacritic, IMDb) from OMDb
+ */
+async function fetchOmdbCriticScores(title: string, year?: string, imdbId?: string): Promise<{
+  rottenTomatoes?: { criticsScore: number; audienceScore?: number };
+  metacritic?: number;
+  imdb?: number;
+}> {
+  const apiKey = process.env.OMDB_API_KEY || "trilogy";
+  try {
+    let url = `http://www.omdbapi.com/?apikey=${apiKey}`;
+    if (imdbId && imdbId.startsWith("tt")) {
+      url += `&i=${encodeURIComponent(imdbId)}`;
+    } else {
+      url += `&t=${encodeURIComponent(title)}`;
+      if (year) {
+        const y = year.slice(0, 4);
+        if (/^\d{4}$/.test(y)) url += `&y=${y}`;
+      }
+    }
+
+    const res = await fetch(url, { signal: AbortSignal.timeout(3500) });
+    if (!res.ok) return {};
+    const data = await res.json();
+    if (data.Response === "False") return {};
+
+    const scores: any = {};
+
+    // Real IMDb Rating
+    if (data.imdbRating && data.imdbRating !== "N/A") {
+      const num = parseFloat(data.imdbRating);
+      if (!isNaN(num)) scores.imdb = num;
+    }
+
+    // Real Metacritic Metascore
+    if (data.Metascore && data.Metascore !== "N/A") {
+      const num = parseInt(data.Metascore, 10);
+      if (!isNaN(num)) scores.metacritic = num;
+    }
+
+    // Real Rotten Tomatoes Score
+    if (Array.isArray(data.Ratings)) {
+      const rt = data.Ratings.find((r: any) => r.Source === "Rotten Tomatoes");
+      if (rt && rt.Value) {
+        const match = rt.Value.match(/(\d+)%/);
+        if (match) {
+          scores.rottenTomatoes = {
+            criticsScore: parseInt(match[1], 10),
+          };
+        }
+      }
+    }
+
+    return scores;
+  } catch (err) {
+    console.warn("[ReviewsRoute] OMDb fetch failed:", err);
+    return {};
+  }
+}
+
+/**
  * Fetch New York Times Movie Reviews
  */
 async function fetchNytMovieReviews(title: string): Promise<ReviewItem[]> {
@@ -154,7 +214,7 @@ const serverReviewsCache = new Map<string, { reviews: ReviewItem[]; scores: any;
  * GET /api/reviews/aggregate
  */
 router.get("/reviews/aggregate", async (req, res) => {
-  const { title, mediaType, tmdbId, author, isbn, useAI } = req.query;
+  const { title, mediaType, tmdbId, author, isbn, useAI, imdbId, releaseYear } = req.query;
 
   if (!title && !tmdbId && !isbn) {
     return res.status(400).json({ error: "title, tmdbId, or isbn is required" });
@@ -164,30 +224,34 @@ router.get("/reviews/aggregate", async (req, res) => {
   const titleStr = (title as string) || "";
   const authorStr = (author as string) || "";
   const isbnStr = (isbn as string) || "";
+  const imdbIdStr = (imdbId as string) || "";
+  const releaseYearStr = (releaseYear as string) || "";
   const shouldRunAI = useAI === "true" || useAI === "1";
 
   // Set long-term immutable Edge caching header (1 year on Vercel CDN)
   res.setHeader("Cache-Control", "public, s-maxage=31536000, max-age=86400, stale-while-revalidate=86400");
 
-  const cacheKey = `${type}_${titleStr.toLowerCase()}_${tmdbId || ''}_${isbnStr || ''}_${shouldRunAI}`;
+  const cacheKey = `${type}_${titleStr.toLowerCase()}_${tmdbId || ''}_${imdbIdStr}_${isbnStr || ''}_${shouldRunAI}`;
   if (serverReviewsCache.has(cacheKey)) {
     return res.json(serverReviewsCache.get(cacheKey));
   }
 
   try {
     const reviews: ReviewItem[] = [];
-    const scores: any = {};
+    let scores: any = {};
 
 
     // 1. Movies & TV aggregation
     if (type === "movie" || type === "tv") {
-      const [nytReviews, traktReviews] = await Promise.all([
+      const [nytReviews, traktReviews, omdbScores] = await Promise.all([
         fetchNytMovieReviews(titleStr),
         tmdbId ? fetchTraktComments(tmdbId as string, type) : Promise.resolve([]),
+        titleStr ? fetchOmdbCriticScores(titleStr, releaseYearStr, imdbIdStr) : Promise.resolve({}),
       ]);
 
       reviews.push(...nytReviews);
       reviews.push(...traktReviews);
+      scores = { ...scores, ...omdbScores };
     } 
     // 2. Books aggregation
     else if (type === "book") {
