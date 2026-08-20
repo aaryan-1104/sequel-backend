@@ -1,4 +1,11 @@
 import { Router, Request, Response } from "express";
+import {
+  computeUserTasteVector,
+  batchEmbedMediaItems,
+  getEmbedding,
+  formatSemanticDocument
+} from "../services/embeddings.js";
+import { cosineSimilarity } from "../utils/vectorMath.js";
 
 const router = Router();
 
@@ -174,7 +181,7 @@ const GENRE_ID_MAP: Record<number, string> = {
 };
 
 // ---------------------------------------------------------------------------
-// POST /api/recommendations
+// POST /api/recommendations (Hybrid Semantic Vector + Lexical Affinity)
 // ---------------------------------------------------------------------------
 router.post("/recommendations", async (req: Request, res: Response) => {
   try {
@@ -220,7 +227,7 @@ router.post("/recommendations", async (req: Request, res: Response) => {
       return res.json({ recommendations: fallback });
     }
 
-    // 4. Build User Taste Profile
+    // 4. Build User Lexical Taste Profile
     const tasteProfile = {
       genres: {} as Record<string, number>,
       creators: {} as Record<string, number>
@@ -252,7 +259,20 @@ router.post("/recommendations", async (req: Request, res: Response) => {
       }
     }
 
-    // 5. Score Candidates
+    // 5. Compute Semantic Vector Embeddings (Autonomous backend engine)
+    let userTasteVector: number[] | null = null;
+    let candidateEmbeddings = new Map<string, number[]>();
+
+    try {
+      [userTasteVector, candidateEmbeddings] = await Promise.all([
+        computeUserTasteVector(library),
+        batchEmbedMediaItems(candidates)
+      ]);
+    } catch (err) {
+      console.warn("[Recommendations] Vector embedding pass skipped, using lexical fallback:", err);
+    }
+
+    // 6. Score Candidates
     const scoredList: Array<CandidateItem & { matchScore: number; reason: string }> = [];
 
     for (const item of candidates) {
@@ -283,8 +303,24 @@ router.post("/recommendations", async (req: Request, res: Response) => {
         }
       }
 
+      // Vector Cosine Similarity
+      let vectorScore = 0;
+      let hasVectorMatch = false;
+      if (userTasteVector && candidateEmbeddings.has(item.id)) {
+        const sim = cosineSimilarity(userTasteVector, candidateEmbeddings.get(item.id)!);
+        // Normalize cosine sim (typically 0.25 to 0.90) to a 0-10 score range
+        if (sim > 0.3) {
+          vectorScore = (sim - 0.3) * 14;
+          hasVectorMatch = true;
+        }
+      }
+
       const qualityPrior = item.voteAverage || 6.5;
-      const totalRaw = genreScore * 0.5 + creatorScore * 0.3 + qualityPrior * 0.2;
+
+      // Hybrid Blend: 50% Vector Semantic + 35% Lexical Genre/Creator + 15% Quality
+      const totalRaw = hasVectorMatch
+        ? vectorScore * 0.50 + (genreScore * 0.5 + creatorScore * 0.3) * 0.35 + qualityPrior * 0.15
+        : genreScore * 0.5 + creatorScore * 0.3 + qualityPrior * 0.2;
 
       if (totalRaw <= 0) continue;
 
@@ -293,6 +329,8 @@ router.post("/recommendations", async (req: Request, res: Response) => {
       let reason = "Trending in your favorite categories";
       if (matchedCreator) {
         reason = `From ${matchedCreator}`;
+      } else if (hasVectorMatch && vectorScore > 4.5) {
+        reason = "Thematic & Atmospheric Vibe Match";
       } else if (matchedGenres.length > 0) {
         reason = `Top match in ${matchedGenres.slice(0, 2).join(' & ')}`;
       }
@@ -306,7 +344,7 @@ router.post("/recommendations", async (req: Request, res: Response) => {
 
     scoredList.sort((a, b) => b.matchScore - a.matchScore);
 
-    // 6. Apply Diversity (Max 3 per dominant genre)
+    // 7. Apply Diversity (Max 3 per dominant genre)
     const diverseResults: Array<CandidateItem & { matchScore: number; reason: string }> = [];
     const genreCounts: Record<string, number> = {};
 
@@ -325,6 +363,70 @@ router.post("/recommendations", async (req: Request, res: Response) => {
   } catch (error) {
     console.error("[Recommendations] Engine execution failed:", error);
     return res.status(500).json({ error: "Failed to compute recommendations" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/recommendations/thematic (Direct Prompt / Anchor Vector Match)
+// ---------------------------------------------------------------------------
+router.post("/recommendations/thematic", async (req: Request, res: Response) => {
+  try {
+    const { prompt, anchorItem, mediaType, limit = 20 } = req.body;
+
+    let targetDoc = "";
+    if (prompt) {
+      targetDoc = `Themes and premise: ${prompt}`;
+    } else if (anchorItem) {
+      targetDoc = formatSemanticDocument(anchorItem);
+    } else {
+      return res.status(400).json({ error: "Either prompt or anchorItem is required" });
+    }
+
+    const targetVector = await getEmbedding(targetDoc);
+
+    // Fetch Candidates
+    let candidates: CandidateItem[] = [];
+    if (!mediaType || mediaType === 'all') {
+      const [movies, tv, books] = await Promise.all([
+        fetchTmdbCandidates('movie'),
+        fetchTmdbCandidates('tv'),
+        fetchBookCandidates()
+      ]);
+      candidates = [...movies, ...tv, ...books];
+    } else if (mediaType === 'movie') {
+      candidates = await fetchTmdbCandidates('movie');
+    } else if (mediaType === 'tv') {
+      candidates = await fetchTmdbCandidates('tv');
+    } else if (mediaType === 'book') {
+      candidates = await fetchBookCandidates();
+    }
+
+    const candidateEmbeddings = await batchEmbedMediaItems(candidates);
+    const scoredList: Array<CandidateItem & { matchScore: number; similarity: number }> = [];
+
+    for (const item of candidates) {
+      if (anchorItem && (item.id === anchorItem.id || item.title.toLowerCase() === anchorItem.title?.toLowerCase())) {
+        continue;
+      }
+
+      const vec = candidateEmbeddings.get(item.id);
+      if (!vec) continue;
+
+      const sim = cosineSimilarity(targetVector, vec);
+      const matchScore = Math.min(99, Math.max(60, Math.round(60 + sim * 39)));
+
+      scoredList.push({
+        ...item,
+        similarity: sim,
+        matchScore
+      });
+    }
+
+    scoredList.sort((a, b) => b.similarity - a.similarity);
+    return res.json({ matches: scoredList.slice(0, limit) });
+  } catch (error) {
+    console.error("[Recommendations] Thematic vector search failed:", error);
+    return res.status(500).json({ error: "Failed to perform thematic vector search" });
   }
 });
 

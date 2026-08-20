@@ -1,7 +1,11 @@
 import { Router } from "express";
 import { Type } from "@google/genai";
 import rateLimit from "express-rate-limit";
-import { getGeminiClient } from "../config/gemini.js";
+import {
+  getGeminiClient,
+  executeWithModelFallback,
+  MODEL_CASCADES
+} from "../config/gemini.js";
 
 const router = Router();
 
@@ -37,24 +41,30 @@ Analyze their notes and generate:
 2. 'titleSuggestion': A punchy, gorgeous title for this review entry (e.g. "A Masterclass in Tension" or "Atmospheric but Shallow").
 3. 'tags': 2-3 custom stylistic tags (e.g. ["Must-Watch", "Heartbreaking", "Masterpiece"]).`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            enhancedNotes: { type: Type.STRING },
-            titleSuggestion: { type: Type.STRING },
-            tags: { type: Type.ARRAY, items: { type: Type.STRING } }
-          },
-          required: ["enhancedNotes", "titleSuggestion", "tags"]
-        }
-      }
-    });
+    const parsed = await executeWithModelFallback(
+      MODEL_CASCADES.fastGeneration,
+      async (client, model) => {
+        const response = await client.models.generateContent({
+          model,
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                enhancedNotes: { type: Type.STRING },
+                titleSuggestion: { type: Type.STRING },
+                tags: { type: Type.ARRAY, items: { type: Type.STRING } }
+              },
+              required: ["enhancedNotes", "titleSuggestion", "tags"]
+            }
+          }
+        });
 
-    const parsed = JSON.parse(response.text || "{}");
+        return JSON.parse(response.text || "{}");
+      }
+    );
+
     return res.json(parsed);
   } catch (error) {
     console.error("Diary insight generator failed:", error);
@@ -104,26 +114,32 @@ Generate a JSON object containing:
   - For Books: Use the public OpenLibrary Cover API URL if you can approximate the ISBN (e.g., "https://covers.openlibrary.org/b/isbn/{isbn}-L.jpg?default=false") or use a highly thematic Unsplash photo (e.g., "https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=300&q=80").
 - backdropUrl: a high-quality relevant wide Unsplash photo URL (w=1200&auto=format&fit=crop&q=80)`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            coverUrl: { type: Type.STRING },
-            backdropUrl: { type: Type.STRING }
-          },
-          required: ["coverUrl", "backdropUrl"]
-        }
-      }
-    });
+    const parsed = await executeWithModelFallback(
+      MODEL_CASCADES.fastGeneration,
+      async (client, model) => {
+        const response = await client.models.generateContent({
+          model,
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                coverUrl: { type: Type.STRING },
+                backdropUrl: { type: Type.STRING }
+              },
+              required: ["coverUrl", "backdropUrl"]
+            }
+          }
+        });
 
-    const parsed = JSON.parse(response.text || "{}");
-    if (!parsed.coverUrl) {
-      throw new Error("Missing coverUrl");
-    }
+        const data = JSON.parse(response.text || "{}");
+        if (!data.coverUrl) {
+          throw new Error("Missing coverUrl in AI response");
+        }
+        return data;
+      }
+    );
 
     return res.json(parsed);
   } catch (error) {
