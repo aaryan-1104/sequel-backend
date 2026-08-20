@@ -39,6 +39,8 @@ export function isJunkBook(title: string, author: string): boolean {
   const lowerTitle = title.toLowerCase();
   const lowerAuthor = author.toLowerCase();
   if (lowerAuthor === "n/a" || lowerAuthor === "unknown" || lowerAuthor === "unknown author" || lowerAuthor === "various authors") return true;
+
+  // Generic junk and test preparation filter
   if (
     lowerTitle.includes("workbook for") ||
     lowerTitle.includes("study guide for") ||
@@ -49,10 +51,126 @@ export function isJunkBook(title: string, author: string): boolean {
     lowerTitle.includes("cliff notes") ||
     lowerTitle.includes("almanac 19") ||
     lowerTitle.includes("calendar 20") ||
-    lowerTitle.includes("lesson plan")
+    lowerTitle.includes("lesson plan") ||
+    lowerTitle.includes("coloring book") ||
+    lowerTitle.includes("word search") ||
+    lowerTitle.includes("crossword") ||
+    lowerTitle.includes("sudoku") ||
+    lowerTitle.includes("log book") ||
+    lowerTitle.includes("daily planner")
   ) return true;
+
+  // Filter out cooking, recipes, diet guides, and food manuals
+  if (
+    lowerTitle.includes("cookbook") ||
+    lowerTitle.includes("recipes") ||
+    lowerTitle.includes("air fryer") ||
+    lowerTitle.includes("instant pot") ||
+    lowerTitle.includes("keto diet") ||
+    lowerTitle.includes("meal prep") ||
+    lowerTitle.includes("weight loss diet") ||
+    lowerTitle.includes("canning guide") ||
+    lowerTitle.includes("baking guide") ||
+    lowerTitle.includes("diet plan") ||
+    lowerTitle.includes("nutrition guide") ||
+    lowerTitle.includes("food & wine")
+  ) return true;
+
+  // Filter out magazines and periodicals
+  if (
+    lowerTitle.includes("magazine") ||
+    lowerTitle.includes("periodical") ||
+    lowerTitle.includes("journal of") ||
+    lowerTitle.includes("issue #") ||
+    lowerTitle.includes("vol. ")
+  ) return true;
+
   return false;
 }
+
+// Curated top-tier YA literature catalog for authentic fallbacks
+const CURATED_YA_TITLES = [
+  "A Good Girl's Guide to Murder Holly Jackson",
+  "Powerless Lauren Roberts",
+  "The Cruel Prince Holly Black",
+  "The Inheritance Games Jennifer Lynn Barnes",
+  "Better Than the Movies Lynn Painter",
+  "Divine Rivals Rebecca Ross",
+  "Six of Crows Leigh Bardugo",
+  "The Ballad of Songbirds and Snakes Suzanne Collins",
+  "They Both Die at the End Adam Silvera",
+  "One of Us Is Lying Karen M. McManus",
+  "Once Upon a Broken Heart Stephanie Garber",
+  "Shatter Me Tahereh Mafi",
+  "Legendborn Tracy Deonn",
+  "We Were Liars E. Lockhart",
+  "Heartless Marissa Meyer",
+  "A Court of Thorns and Roses Sarah J. Maas",
+  "Fourth Wing Rebecca Yarros",
+  "Iron Flame Rebecca Yarros",
+  "Heartstopper Alice Oseman",
+  "The Summer I Turned Pretty Jenny Han",
+  "Five Survive Holly Jackson",
+  "Reckless Lauren Roberts"
+];
+
+const fetchCuratedYABooks = async (pageNum: number = 1): Promise<any[]> => {
+  const pageSize = 12;
+  const startIndex = ((pageNum - 1) * pageSize) % CURATED_YA_TITLES.length;
+  const slice = CURATED_YA_TITLES.slice(startIndex, startIndex + pageSize);
+  if (slice.length === 0) return [];
+
+  const promises = slice.map(async (searchQuery, idx) => {
+    try {
+      const q = encodeURIComponent(searchQuery);
+      const res = await fetch(`https://itunes.apple.com/search?term=${q}&entity=ebook&limit=1`, {
+        signal: AbortSignal.timeout(4000)
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      const item = data.results?.[0];
+      if (!item) return null;
+
+      const rawTitle = item.trackName || searchQuery;
+      const rawAuthor = item.artistName || "YA Author";
+      const cleanTitle = sanitizeBookTitle(toTitleCase(rawTitle));
+      const coverUrl = item.artworkUrl100 ? item.artworkUrl100.replace("100x100bb", "600x600bb") : "";
+      const releaseDate = item.releaseDate ? item.releaseDate.substring(0, 10) : "2023-01-01";
+      const synopsis = (item.description || "A bestselling Young Adult novel.").replace(/<[^>]+>/g, '').slice(0, 350);
+
+      let hash = 0;
+      for (let i = 0; i < cleanTitle.length; i++) hash = (hash * 31 + cleanTitle.charCodeAt(i)) % 300;
+      const pageCount = 280 + (hash % 220);
+
+      return {
+        id: `itunes-book-${item.trackId || idx}`,
+        title: cleanTitle,
+        type: "book",
+        releaseDate,
+        synopsis,
+        overview: synopsis,
+        genres: ["Young Adult", "Fiction", "Bestseller"],
+        creators: [rawAuthor],
+        platforms: ["Print", "Kindle", "Apple Books", "Ebook"],
+        coverUrl: coverUrl || "https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=500&auto=format&fit=crop&q=80",
+        backdropUrl: "https://images.unsplash.com/photo-1497633762265-9d179a990aa6?w=1200&auto=format&fit=crop&q=80",
+        rating: 9.2 + (hash % 8) / 10,
+        bookSpecifics: {
+          author: rawAuthor,
+          currentPage: 0,
+          totalPages: pageCount,
+          pageCount: pageCount,
+          format: 'ebook'
+        }
+      };
+    } catch {
+      return null;
+    }
+  });
+
+  const results = await Promise.all(promises);
+  return results.filter(Boolean);
+};
 
 // Fetch Apple Books Top Ebooks Chart with High-Res Artwork and Quality Filters
 const fetchAppleBooksChart = async (genreId?: number | string): Promise<any[]> => {
@@ -265,11 +383,15 @@ const fetchCategoryBooks = async (category: 'youngAdult' | 'fiction' | 'nonficti
   const nytBooks = await fetchNYTBooks(pageNum, category);
   if (nytBooks && nytBooks.length > 0) return nytBooks;
 
-  // 2. High-Fidelity Apple Books Charts Fallback
-  let genreId: number | undefined;
+  // 2. High-Fidelity Young Adult Curation
   if (category === 'youngAdult') {
-    genreId = 9028; // Young Adult Fiction
-  } else if (category === 'fiction' || category === 'trending') {
+    const yaBooks = await fetchCuratedYABooks(pageNum);
+    if (yaBooks && yaBooks.length > 0) return yaBooks;
+  }
+
+  // 3. Apple Books Charts Fallback for Fiction & Nonfiction
+  let genreId: number | undefined;
+  if (category === 'fiction' || category === 'trending' || category === 'bestseller') {
     genreId = 9031; // Fiction & Literature
   } else if (category === 'nonfiction') {
     genreId = 9002; // Nonfiction
