@@ -28,11 +28,13 @@ router.post("/book-details", async (req, res) => {
     let previewLink = "";
 
 
+    const gbooksKey = process.env.GOOGLE_BOOKS_API_KEY ? `&key=${process.env.GOOGLE_BOOKS_API_KEY}` : "";
+
     // Parallel requests to iTunes Ebook, iTunes Audiobook, and Google Books
     const [itunesEbookRes, itunesAudiobookRes, gbooksRes] = await Promise.all([
       fetch(`https://itunes.apple.com/search?term=${q}&entity=ebook&limit=3`).catch(() => null),
       fetch(`https://itunes.apple.com/search?term=${q}&media=audiobook&limit=3`).catch(() => null),
-      fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(searchTerm)}&maxResults=3`).catch(() => null)
+      fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(searchTerm)}&maxResults=3${gbooksKey}`).catch(() => null)
     ]);
 
     // Parse Google Books API volume data
