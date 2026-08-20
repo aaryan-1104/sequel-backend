@@ -306,13 +306,13 @@ const fetchNYTBooks = async (pageNum: number = 1, category: string = 'trending')
       if (category === 'youngAdult' || category === 'youngAdultBooks') {
         lists = ['young-adult-hardcover'];
       } else if (category === 'fiction' || category === 'fictionBooks') {
-        lists = ['hardcover-fiction', 'combined-print-and-e-book-fiction', 'trade-fiction-paperback'];
+        lists = ['hardcover-fiction'];
       } else if (category === 'nonfiction' || category === 'nonFictionBooks') {
-        lists = ['hardcover-nonfiction', 'combined-print-and-e-book-nonfiction', 'paperback-nonfiction-monthly'];
+        lists = ['hardcover-nonfiction', 'paperback-nonfiction-monthly'];
       } else if (category === 'trending' || category === 'trendingBooks') {
-        lists = ['hardcover-fiction', 'trade-fiction-paperback', 'young-adult-hardcover'];
+        lists = ['trade-fiction-paperback'];
       } else if (category === 'bestseller' || category === 'bestsellerBooks') {
-        lists = ['combined-print-and-e-book-fiction', 'hardcover-nonfiction', 'trade-fiction-paperback'];
+        lists = ['combined-print-and-e-book-fiction'];
       } else if (category === 'audiobook' || category === 'bestsellerAudiobooks' || category === 'trendingAudiobooks') {
         lists = ['audio-fiction', 'audio-nonfiction'];
       } else {
@@ -1866,8 +1866,8 @@ router.get("/tmdb-discover", async (req, res) => {
         fetchCategoryBooks('youngAdult', page),
         fetchCategoryBooks('fiction', page),
         fetchCategoryBooks('nonfiction', page),
-        fetchCategoryBooks('fiction', page),
-        fetchCategoryBooks('fiction', page),
+        fetchCategoryBooks('trending', page),
+        fetchCategoryBooks('bestseller', page),
         fetchTrendingAudiobooks(page),
         fetchBestsellerAudiobooks(page)
       ]);
