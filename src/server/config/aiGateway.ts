@@ -51,98 +51,111 @@ export class AIGateway {
     const { prompt, systemPrompt, responseFormat } = opts;
     const isJson = responseFormat === "json";
 
-    // 1. Try OpenRouter (100% Free models without Credit Card)
     const openRouterKey = process.env.OPEN_ROUTER_API_KEY;
-    if (openRouterKey) {
-      const openRouterModels = ["openrouter/free", "nvidia/nemotron-3-nano-30b-a3b:free"];
-      for (const model of openRouterModels) {
-        try {
-          const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${openRouterKey}`,
-              "HTTP-Referer": "https://github.com/aaryan-1104/sequel", // Required by OpenRouter
-              "X-Title": "Sequel",
-            },
-            body: JSON.stringify({
-              model,
-              messages: [
-                ...(systemPrompt ? [{ role: "system", content: systemPrompt }] : []),
-                { role: "user", content: prompt },
-              ],
-              ...(isJson ? { response_format: { type: "json_object" } } : {}),
-            }),
-            signal: AbortSignal.timeout(8000),
-          });
-
-          if (res.ok) {
-            const data: any = await res.json();
-            const content = data.choices?.[0]?.message?.content;
-            if (content) {
-              return { text: content, provider: "openrouter", model };
-            }
-          }
-        } catch (err) {
-          console.warn(`[AIGateway] OpenRouter (${model}) failed, cascading:`, String(err).slice(0, 100));
-        }
-      }
-    }
-
-    // 2. Try Groq (Ultra-fast open source models)
     const groqKey = process.env.GROQ_API_KEY;
-    if (groqKey) {
-      const groqModels = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b"];
-      for (const model of groqModels) {
-        try {
-          const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${groqKey}`,
-            },
-            body: JSON.stringify({
-              model,
-              messages: [
-                ...(systemPrompt ? [{ role: "system", content: systemPrompt }] : []),
-                { role: "user", content: prompt },
-              ],
-              ...(isJson ? { response_format: { type: "json_object" } } : {}),
-            }),
-            signal: AbortSignal.timeout(8000),
-          });
 
-          if (res.ok) {
-            const data: any = await res.json();
-            const content = data.choices?.[0]?.message?.content;
-            if (content) {
-              return { text: content, provider: "groq", model };
-            }
-          }
-        } catch (err) {
-          console.warn(`[AIGateway] Groq (${model}) failed, cascading:`, String(err).slice(0, 100));
-        }
-      }
+    // 1. Load balancer: Randomize execution order of primary free providers
+    const providers: Array<"openrouter" | "groq" | "gemini"> = [];
+    if (openRouterKey) providers.push("openrouter");
+    if (groqKey) providers.push("groq");
+
+    // Shuffle providers randomly (50/50 split if both exist)
+    for (let i = providers.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [providers[i], providers[j]] = [providers[j], providers[i]];
     }
 
-    // 3. Try Google Gemini
-    const gemini = getGeminiClient();
-    if (gemini) {
-      const models = ["gemini-2.0-flash", "gemini-1.5-flash"];
-      for (const model of models) {
-        try {
-          const contents = systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt;
-          const response = await gemini.models.generateContent({
-            model,
-            contents,
-            config: isJson ? { responseMimeType: "application/json" } : undefined,
-          });
+    // Always append Gemini as the absolute final fallback
+    providers.push("gemini");
 
-          if (response.text) {
-            return { text: response.text, provider: "gemini", model };
+    // 2. Execute cascaded generation
+    for (const provider of providers) {
+      if (provider === "openrouter") {
+        const openRouterModels = ["openrouter/free", "nvidia/nemotron-3-nano-30b-a3b:free"];
+        for (const model of openRouterModels) {
+          try {
+            const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${openRouterKey}`,
+                "HTTP-Referer": "https://github.com/aaryan-1104/sequel",
+                "X-Title": "Sequel",
+              },
+              body: JSON.stringify({
+                model,
+                messages: [
+                  ...(systemPrompt ? [{ role: "system", content: systemPrompt }] : []),
+                  { role: "user", content: prompt },
+                ],
+                ...(isJson ? { response_format: { type: "json_object" } } : {}),
+              }),
+              signal: AbortSignal.timeout(8000),
+            });
+
+            if (res.ok) {
+              const data: any = await res.json();
+              const content = data.choices?.[0]?.message?.content;
+              if (content) {
+                return { text: content, provider: "openrouter", model };
+              }
+            }
+          } catch (err) {
+            console.warn(`[AIGateway] OpenRouter (${model}) failed, cascading:`, String(err).slice(0, 100));
           }
-        } catch (err) {
-          console.warn(`[AIGateway] Gemini (${model}) failed, cascading:`, String(err).slice(0, 100));
+        }
+      } else if (provider === "groq") {
+        const groqModels = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b"];
+        for (const model of groqModels) {
+          try {
+            const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${groqKey}`,
+              },
+              body: JSON.stringify({
+                model,
+                messages: [
+                  ...(systemPrompt ? [{ role: "system", content: systemPrompt }] : []),
+                  { role: "user", content: prompt },
+                ],
+                ...(isJson ? { response_format: { type: "json_object" } } : {}),
+              }),
+              signal: AbortSignal.timeout(8000),
+            });
+
+            if (res.ok) {
+              const data: any = await res.json();
+              const content = data.choices?.[0]?.message?.content;
+              if (content) {
+                return { text: content, provider: "groq", model };
+              }
+            }
+          } catch (err) {
+            console.warn(`[AIGateway] Groq (${model}) failed, cascading:`, String(err).slice(0, 100));
+          }
+        }
+      } else if (provider === "gemini") {
+        const gemini = getGeminiClient();
+        if (gemini) {
+          const models = ["gemini-2.0-flash", "gemini-1.5-flash"];
+          for (const model of models) {
+            try {
+              const contents = systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt;
+              const response = await gemini.models.generateContent({
+                model,
+                contents,
+                config: isJson ? { responseMimeType: "application/json" } : undefined,
+              });
+
+              if (response.text) {
+                return { text: response.text, provider: "gemini", model };
+              }
+            } catch (err) {
+              console.warn(`[AIGateway] Gemini (${model}) failed, cascading:`, String(err).slice(0, 100));
+            }
+          }
         }
       }
     }
