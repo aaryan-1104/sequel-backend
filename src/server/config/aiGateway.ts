@@ -52,9 +52,9 @@ export class AIGateway {
     const isJson = responseFormat === "json";
 
     // 1. Try OpenRouter (100% Free models without Credit Card)
-    const openRouterKey = process.env.OPENROUTER_API_KEY;
+    const openRouterKey = process.env.OPEN_ROUTER_API_KEY;
     if (openRouterKey) {
-      const openRouterModels = ["meta-llama/llama-3-8b-instruct:free", "google/gemma-2-9b-it:free"];
+      const openRouterModels = ["openrouter/free", "nvidia/nemotron-3-nano-30b-a3b:free"];
       for (const model of openRouterModels) {
         try {
           const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {

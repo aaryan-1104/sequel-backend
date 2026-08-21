@@ -17,7 +17,14 @@ export interface DbUser {
 
 const inMemoryUsers = new Map<string, DbUser>();
 const inMemorySessions = new Map<string, string>(); // token -> userId
-const inMemoryUserData = new Map<string, { library: any[], diary: any[], customLists: any[] }>();
+const inMemoryUserData = new Map<string, { 
+  library: any[], 
+  diary: any[], 
+  customLists: any[], 
+  customCollections?: any[], 
+  dismissedRecommendations?: any[], 
+  settings?: any 
+}>();
 
 // Timeout helper to prevent infinite hangs on bad Firebase credentials
 const withTimeout = <T>(promise: Promise<T>, ms = 8000): Promise<T> => {
@@ -37,7 +44,7 @@ export async function findUserByUsernameOrEmail(identifier: string): Promise<DbU
 
   if (adminDb) {
     try {
-      let snapshot = await withTimeout(adminDb.collection("users").where("usernameLowerCase", "==", identifier).limit(1).get());
+      let snapshot: any = await withTimeout(adminDb.collection("users").where("usernameLowerCase", "==", identifier).limit(1).get());
       if (!snapshot.empty) return snapshot.docs[0].data() as DbUser;
       snapshot = await withTimeout(adminDb.collection("users").where("emailLowerCase", "==", identifier).limit(1).get());
       if (!snapshot.empty) return snapshot.docs[0].data() as DbUser;
@@ -96,7 +103,7 @@ export async function findUserById(id: string): Promise<DbUser | null> {
 
   if (adminDb) {
     try {
-      const doc = await withTimeout(adminDb.collection("users").doc(id).get());
+      const doc: any = await withTimeout(adminDb.collection("users").doc(id).get());
       if (doc.exists) return doc.data() as DbUser;
     } catch (err: any) {
       console.error("Firestore error (findUserById):", err.message);
@@ -159,7 +166,7 @@ export async function getUserIdByToken(token: string): Promise<string | null> {
   }
   if (adminDb) {
     try {
-      const doc = await withTimeout(adminDb.collection("sessions").doc(token).get());
+      const doc: any = await withTimeout(adminDb.collection("sessions").doc(token).get());
       if (doc.exists) return doc.data()?.userId;
     } catch (err: any) {
       console.error("Firestore error (getUserIdByToken):", err.message);
@@ -171,7 +178,7 @@ export async function getUserIdByToken(token: string): Promise<string | null> {
 export async function getUserData(userId: string) {
   if (adminDb) {
     try {
-      const doc = await withTimeout(adminDb.collection("user_data").doc(userId).get());
+      const doc: any = await withTimeout(adminDb.collection("user_data").doc(userId).get());
       if (doc.exists) {
         const data = doc.data() || {};
         return {
@@ -216,7 +223,7 @@ export async function saveUserData(
     dismissedRecommendations: dismissedRecommendations !== undefined ? dismissedRecommendations : existing.dismissedRecommendations,
     settings: settings !== undefined ? settings : existing.settings
   };
-  inMemoryUserData.set(userId, updated);
+  inMemoryUserData.set(userId, updated as any);
 
   if (adminDb) {
     try {
