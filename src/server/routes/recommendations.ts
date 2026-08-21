@@ -187,6 +187,13 @@ router.post("/recommendations", async (req: Request, res: Response) => {
   try {
     const { library = [], mediaType, limit = 30 } = req.body;
 
+    const clientIp = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown').toString();
+    const cacheKey = `daily_recs_${clientIp}_${mediaType || 'all'}`;
+    const cached = CANDIDATE_CACHE.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < 24 * 60 * 60 * 1000) {
+      return res.json({ recommendations: cached.data });
+    }
+
     // 1. Gather all candidates across media types with fast concurrent fetching & deduplication
     let candidates: CandidateItem[] = [];
     if (!mediaType || mediaType === 'all') {
@@ -359,6 +366,7 @@ router.post("/recommendations", async (req: Request, res: Response) => {
       }
     }
 
+    CANDIDATE_CACHE.set(cacheKey, { data: diverseResults, timestamp: Date.now() });
     return res.json({ recommendations: diverseResults });
   } catch (error) {
     console.error("[Recommendations] Engine execution failed:", error);
