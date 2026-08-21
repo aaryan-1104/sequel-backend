@@ -27,37 +27,95 @@ async function fetchLetterboxdData(title: string, releaseYear?: string, imdbId?:
   reviews: ReviewItem[];
   score?: { rating: number; count: number };
 }> {
-  if (!title && !imdbId) return { reviews: [] };
+  const headers = {
+    "User-Agent": "Letterboxd/2.1 (com.letterboxd.letterboxd; build:1; iOS 17.4.1) Alamofire/5.8.0",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+  };
 
   try {
     let filmSlug = "";
+    const rawSlug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const cleanYear = releaseYear ? releaseYear.slice(0, 4) : "";
 
-    // 1. Resolve exact canonical slug using IMDb ID redirect if available
+    // Strategy 1: Resolve exact canonical slug using IMDb ID redirect if available
     if (imdbId && imdbId.startsWith("tt")) {
       try {
         const redirectRes = await fetch(`https://letterboxd.com/imdb/${imdbId}/`, {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          },
+          headers,
           redirect: "follow",
           signal: AbortSignal.timeout(3500),
         });
-        if (redirectRes.ok) {
+        if (redirectRes.ok && redirectRes.url.includes("/film/")) {
           const match = redirectRes.url.match(/letterboxd\.com\/film\/([^\/]+)/);
           if (match) {
             filmSlug = match[1];
           }
         }
-      } catch (err) {
-        // Fall back to title slug
-      }
+      } catch {}
     }
 
-    // Fallback: derive slug from title and release year (e.g. oppenheimer-2023 or batman-1989)
+    // Strategy 2: If we have releaseYear, try direct year slug first (e.g. "obsession-2025" or "batman-1989")
+    if (!filmSlug && cleanYear && /^\d{4}$/.test(cleanYear)) {
+      try {
+        const yearSlug = `${rawSlug}-${cleanYear}`;
+        const res = await fetch(`https://letterboxd.com/film/${yearSlug}/`, {
+          headers,
+          signal: AbortSignal.timeout(3000),
+        });
+        if (res.ok) {
+          filmSlug = yearSlug;
+        }
+      } catch {}
+    }
+
+    // Strategy 3: Try raw base slug (e.g. "inception")
+    if (!filmSlug && rawSlug) {
+      try {
+        const res = await fetch(`https://letterboxd.com/film/${rawSlug}/`, {
+          headers,
+          signal: AbortSignal.timeout(3000),
+        });
+        if (res.ok) {
+          filmSlug = rawSlug;
+        }
+      } catch {}
+    }
+
+    // Strategy 4: Year validation - verify that candidate slug matches expected release year
+    if (filmSlug && cleanYear && /^\d{4}$/.test(cleanYear)) {
+      try {
+        const pageRes = await fetch(`https://letterboxd.com/film/${filmSlug}/`, { headers, signal: AbortSignal.timeout(3000) });
+        if (pageRes.ok) {
+          const html = await pageRes.text();
+          const yearMatch = html.match(/\/films\/year\/(\d{4})\//i) || html.match(/<meta property="og:title" content="[^"]*\((\d{4})\)"/i);
+          const pageYear = yearMatch ? yearMatch[1] : null;
+          if (pageYear && Math.abs(parseInt(pageYear, 10) - parseInt(cleanYear, 10)) > 1) {
+            filmSlug = ""; // Invalidate mismatching slug
+          }
+        }
+      } catch {}
+    }
+
+    // Strategy 5: Letterboxd Search Query Fallback
     if (!filmSlug && title) {
-      const rawSlug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-      filmSlug = releaseYear && /^\d{4}$/.test(releaseYear) ? `${rawSlug}-${releaseYear}` : rawSlug;
+      try {
+        const searchUrl = `https://letterboxd.com/search/${encodeURIComponent(title + (cleanYear ? ` ${cleanYear}` : ''))}/`;
+        const searchRes = await fetch(searchUrl, { headers, signal: AbortSignal.timeout(3500) });
+        if (searchRes.ok) {
+          const sHtml = await searchRes.text();
+          const regex = /href="\/film\/([^\/]+)\/"[^>]*>(.*?)<\/a>[\s\S]*?(?:<small[^>]*>.*?(\d{4}).*?<\/small>|\/films\/year\/(\d{4})\/)/gi;
+          let m;
+          while ((m = regex.exec(sHtml)) !== null) {
+            const foundSlug = m[1];
+            const foundYear = m[3] || m[4];
+            if (!cleanYear || (foundYear && Math.abs(parseInt(foundYear, 10) - parseInt(cleanYear, 10)) <= 1)) {
+              filmSlug = foundSlug;
+              break;
+            }
+          }
+        }
+      } catch {}
     }
 
     if (!filmSlug) return { reviews: [] };
