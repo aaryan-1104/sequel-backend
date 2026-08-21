@@ -1,37 +1,8 @@
-import {
-  getGeminiClient,
-  executeWithModelFallback,
-  MODEL_CASCADES
-} from "../config/gemini.js";
+import { AIGateway } from "../config/aiGateway.js";
 import { calculateCentroid, normalize } from "../utils/vectorMath.js";
 
-// In-memory cache for computed embeddings (Key: item id / text hash -> 768-dim vector)
+// In-memory cache for computed embeddings (Key: item id / text hash -> 384-dim vector)
 const EMBEDDING_CACHE = new Map<string, number[]>();
-
-/**
- * Generate a deterministic dense 768-dimensional fallback projection
- * to ensure 100% uptime when offline or when all API quotas are exhausted.
- */
-function createDeterministicEmbedding(text: string): number[] {
-  const dim = 768;
-  const vector = new Array(dim).fill(0);
-  const words = text.toLowerCase().split(/\W+/).filter(Boolean);
-
-  for (let wIdx = 0; wIdx < words.length; wIdx++) {
-    const word = words[wIdx];
-    let hash = 0;
-    for (let i = 0; i < word.length; i++) {
-      hash = (hash << 5) - hash + word.charCodeAt(i);
-      hash |= 0;
-    }
-    const baseIdx = Math.abs(hash) % dim;
-    vector[baseIdx] += 1.0 / (wIdx + 1);
-    vector[(baseIdx + 13) % dim] += 0.5;
-    vector[(baseIdx + 37) % dim] += 0.25;
-  }
-
-  return normalize(vector);
-}
 
 /**
  * Formats a media item into a rich semantic text document for embedding.
@@ -56,7 +27,7 @@ export function formatSemanticDocument(item: {
 }
 
 /**
- * Generates an embedding vector using multi-model cascade with fallback protection.
+ * Generates an embedding vector using local Transformers.js via AIGateway.
  */
 export async function getEmbedding(text: string, cacheKey?: string): Promise<number[]> {
   const key = cacheKey || text.slice(0, 100);
@@ -64,39 +35,11 @@ export async function getEmbedding(text: string, cacheKey?: string): Promise<num
     return EMBEDDING_CACHE.get(key)!;
   }
 
-  const ai = getGeminiClient();
-  if (!ai) {
-    const fallback = createDeterministicEmbedding(text);
-    EMBEDDING_CACHE.set(key, fallback);
-    return fallback;
-  }
-
-  try {
-    const normalized = await executeWithModelFallback(
-      MODEL_CASCADES.embedding,
-      async (client, model) => {
-        const response: any = await (client.models as any).embedContent({
-          model,
-          contents: text,
-        });
-
-        const values = response?.embedding?.values || response?.values;
-        if (Array.isArray(values) && values.length > 0) {
-          return normalize(values);
-        }
-        throw new Error("Empty embedding returned");
-      }
-    );
-
-    EMBEDDING_CACHE.set(key, normalized);
-    return normalized;
-  } catch (error) {
-    console.warn("[Embeddings] Multi-model embedding cascade failed, using deterministic fallback:", error);
-  }
-
-  const fallback = createDeterministicEmbedding(text);
-  EMBEDDING_CACHE.set(key, fallback);
-  return fallback;
+  const result = await AIGateway.generateEmbedding(text);
+  const vector = result.vector;
+  
+  EMBEDDING_CACHE.set(key, vector);
+  return vector;
 }
 
 /**
