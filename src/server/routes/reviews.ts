@@ -422,7 +422,7 @@ router.get("/reviews/aggregate", async (req, res) => {
         fetchNytMovieReviews(titleStr),
         tmdbId ? fetchTraktComments(tmdbId as string, type) : Promise.resolve([]),
         titleStr ? fetchOmdbCriticScores(titleStr, releaseYearStr, imdbIdStr) : Promise.resolve({}),
-        type === 'movie' && titleStr ? fetchLetterboxdData(titleStr, releaseYearStr, imdbIdStr) : Promise.resolve({ reviews: [] }),
+        (type === 'movie' || type === 'tv') && titleStr ? fetchLetterboxdData(titleStr, releaseYearStr, imdbIdStr) : Promise.resolve({ reviews: [] }),
       ]);
 
       reviews.push(...nytReviews);
