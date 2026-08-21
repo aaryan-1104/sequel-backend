@@ -96,23 +96,32 @@ async function fetchLetterboxdData(title: string, releaseYear?: string, imdbId?:
       // Quiet fallback
     }
 
-    // 3. Fetch Top Activity Reviews Page
+    // 3. Fetch Top Activity Reviews across multiple pages (up to page 2/3)
     const reviews: ReviewItem[] = [];
-    try {
-      const revUrl = `https://letterboxd.com/film/${filmSlug}/reviews/by/activity/`;
-      const revRes = await fetch(revUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        },
-        signal: AbortSignal.timeout(4000),
-      });
+    const maxPagesToFetch = 2; // Fetches up to ~24 top spoiler-free reviews
 
-      if (revRes.ok) {
+    for (let page = 1; page <= maxPagesToFetch; page++) {
+      try {
+        const revUrl = page === 1
+          ? `https://letterboxd.com/film/${filmSlug}/reviews/by/activity/`
+          : `https://letterboxd.com/film/${filmSlug}/reviews/by/activity/page/${page}/`;
+
+        const revRes = await fetch(revUrl, {
+          headers: {
+            "User-Agent": "Letterboxd/2.1 (com.letterboxd.letterboxd; build:1; iOS 17.4.1) Alamofire/5.8.0",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+          },
+          signal: AbortSignal.timeout(4000),
+        });
+
+        if (!revRes.ok) break;
+
         const revHtml = await revRes.text();
         const regex = /<strong class="displayname">([^<]+)<\/strong>[\s\S]*?(?:<span class="rating rated-(\d+)")?[\s\S]*?<time class="timestamp"[^>]*>([^<]+)<\/time>[\s\S]*?<div class="body-text -prose[^"]*"[^>]*>([\s\S]*?)<\/div>/gi;
 
         let match;
-        while ((match = regex.exec(revHtml)) !== null && reviews.length < 8) {
+        while ((match = regex.exec(revHtml)) !== null && reviews.length < 24) {
           const author = match[1].trim();
           const rawRated = match[2] ? parseInt(match[2], 10) : null;
           const score = rawRated ? rawRated / 2 : 4;
@@ -137,7 +146,8 @@ async function fetchLetterboxdData(title: string, releaseYear?: string, imdbId?:
           // Strictly omit reviews containing spoilers
           if (isSpoiler) continue;
 
-          if (cleanBody && author) {
+          // Prevent duplicates across pages
+          if (cleanBody && author && !reviews.some(r => r.author.toLowerCase() === author.toLowerCase())) {
             reviews.push({
               id: `letterboxd-${filmSlug}-${author}-${reviews.length + 1}`,
               author,
@@ -152,9 +162,9 @@ async function fetchLetterboxdData(title: string, releaseYear?: string, imdbId?:
             });
           }
         }
+      } catch {
+        break;
       }
-    } catch {
-      // Quiet fallback
     }
 
     return {
