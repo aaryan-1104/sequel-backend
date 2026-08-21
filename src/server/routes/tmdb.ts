@@ -606,7 +606,8 @@ router.all("/tmdb-details", async (req, res) => {
         providers: { 
           streaming: streamingProviders, 
           buy: buyProviders, 
-          watchLink: usProviders?.link || tmdbData['watch/providers']?.results?.US?.link || null 
+          watchLink: usProviders?.link || tmdbData['watch/providers']?.results?.US?.link || null,
+          attribution: "Powered by JustWatch via TMDB",
         },
         tmdbId: cleanId,
         title: tmdbData.title || tmdbData.name || "Untitled",
