@@ -1,5 +1,9 @@
 import { getGeminiClient } from "./gemini.js";
 import { normalize } from "../utils/vectorMath.js";
+import { pipeline, env } from "@xenova/transformers";
+
+// Disable local models fallback to ensure it downloads from HuggingFace Hub on first run
+env.allowLocalModels = false;
 
 export interface AICompletionOptions {
   prompt: string;
@@ -9,29 +13,83 @@ export interface AICompletionOptions {
 
 export interface AICompletionResult {
   text: string;
-  provider: "gemini" | "groq" | "fallback";
+  provider: "openrouter" | "groq" | "gemini" | "fallback";
   model: string;
 }
 
 export interface AIEmbeddingResult {
   vector: number[];
-  provider: "gemini" | "huggingface" | "local";
+  provider: "gemini" | "local";
   model: string;
 }
 
 /**
+ * Singleton for Transformers.js pipeline
+ */
+class LocalEmbeddingEngine {
+  static task = "feature-extraction" as const;
+  static model = "Xenova/all-MiniLM-L6-v2";
+  static instance: any = null;
+
+  static async getInstance() {
+    if (this.instance === null) {
+      this.instance = await pipeline(this.task, this.model);
+    }
+    return this.instance;
+  }
+}
+
+/**
  * Universal Multi-Provider AI Gateway
- * Transparently orchestrates across Google Gemini, Groq (Open Source Llama/Qwen/GPT-OSS), and Local Vector Projections.
  */
 export class AIGateway {
   /**
    * Generates text/structured completions with multi-provider fallback.
-   * Cascade Order: Groq (Open Source gpt-oss-120b / qwen3.6-27b) -> Gemini -> Fallback
+   * Cascade Order: OpenRouter (Free) -> Groq -> Gemini -> Fallback
    */
   static async generateCompletion(opts: AICompletionOptions): Promise<AICompletionResult> {
     const { prompt, systemPrompt, responseFormat } = opts;
+    const isJson = responseFormat === "json";
 
-    // 1. Try Groq (Ultra-fast open source models: openai/gpt-oss-120b, openai/gpt-oss-20b, qwen/qwen3.6-27b)
+    // 1. Try OpenRouter (100% Free models without Credit Card)
+    const openRouterKey = process.env.OPENROUTER_API_KEY;
+    if (openRouterKey) {
+      const openRouterModels = ["meta-llama/llama-3-8b-instruct:free", "google/gemma-2-9b-it:free"];
+      for (const model of openRouterModels) {
+        try {
+          const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${openRouterKey}`,
+              "HTTP-Referer": "https://github.com/aaryan-1104/sequel", // Required by OpenRouter
+              "X-Title": "Sequel",
+            },
+            body: JSON.stringify({
+              model,
+              messages: [
+                ...(systemPrompt ? [{ role: "system", content: systemPrompt }] : []),
+                { role: "user", content: prompt },
+              ],
+              ...(isJson ? { response_format: { type: "json_object" } } : {}),
+            }),
+            signal: AbortSignal.timeout(8000),
+          });
+
+          if (res.ok) {
+            const data: any = await res.json();
+            const content = data.choices?.[0]?.message?.content;
+            if (content) {
+              return { text: content, provider: "openrouter", model };
+            }
+          }
+        } catch (err) {
+          console.warn(`[AIGateway] OpenRouter (${model}) failed, cascading:`, String(err).slice(0, 100));
+        }
+      }
+    }
+
+    // 2. Try Groq (Ultra-fast open source models)
     const groqKey = process.env.GROQ_API_KEY;
     if (groqKey) {
       const groqModels = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b"];
@@ -49,7 +107,7 @@ export class AIGateway {
                 ...(systemPrompt ? [{ role: "system", content: systemPrompt }] : []),
                 { role: "user", content: prompt },
               ],
-              ...(responseFormat === "json" ? { response_format: { type: "json_object" } } : {}),
+              ...(isJson ? { response_format: { type: "json_object" } } : {}),
             }),
             signal: AbortSignal.timeout(8000),
           });
@@ -67,7 +125,7 @@ export class AIGateway {
       }
     }
 
-    // 2. Try Google Gemini
+    // 3. Try Google Gemini
     const gemini = getGeminiClient();
     if (gemini) {
       const models = ["gemini-2.0-flash", "gemini-1.5-flash"];
@@ -77,7 +135,7 @@ export class AIGateway {
           const response = await gemini.models.generateContent({
             model,
             contents,
-            config: responseFormat === "json" ? { responseMimeType: "application/json" } : undefined,
+            config: isJson ? { responseMimeType: "application/json" } : undefined,
           });
 
           if (response.text) {
@@ -89,87 +147,50 @@ export class AIGateway {
       }
     }
 
-    // 3. Safe Fallback
+    // 4. Safe Fallback
     return {
-      text: responseFormat === "json" ? "{}" : "Insight unavailable.",
+      text: isJson ? "{}" : "Insight unavailable.",
       provider: "fallback",
       model: "offline-template",
     };
   }
 
   /**
-   * Generates dense vector embeddings with multi-provider fallback.
-   * Cascade Order: Gemini (text-embedding-004) -> Hugging Face -> Local 768-Dim Dense Projection
+   * Generates dense vector embeddings using local Transformers.js model as primary,
+   * avoiding external API costs and latencies completely.
    */
   static async generateEmbedding(text: string): Promise<AIEmbeddingResult> {
-    // 1. Try Google Gemini text-embedding-004
-    const gemini = getGeminiClient();
-    if (gemini) {
-      try {
-        const response: any = await (gemini.models as any).embedContent({
-          model: "text-embedding-004",
-          contents: text,
-        });
-
-        const values = response?.embedding?.values || response?.values;
-        if (Array.isArray(values) && values.length > 0) {
-          return {
-            vector: normalize(values),
-            provider: "gemini",
-            model: "text-embedding-004",
-          };
-        }
-      } catch (err) {
-        console.warn("[AIGateway] Gemini embedding failed, falling back:", String(err).slice(0, 100));
-      }
+    try {
+      // 1. Primary: Local Transformers.js (Xenova/all-MiniLM-L6-v2)
+      // Generates a 384-dimensional vector natively in Node.js
+      const extractor = await LocalEmbeddingEngine.getInstance();
+      const output = await extractor(text, { pooling: "mean", normalize: true });
+      const vector = Array.from(output.data) as number[];
+      
+      return {
+        vector: vector,
+        provider: "local",
+        model: "Transformers.js/all-MiniLM-L6-v2",
+      };
+    } catch (err) {
+      console.error("[AIGateway] Transformers.js failed, falling back to basic deterministic hash.", err);
     }
 
-    // 2. Try Hugging Face
-    const hfKey = process.env.HUGGINGFACE_API_KEY;
-    if (hfKey) {
-      try {
-        const res = await fetch("https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/all-MiniLM-L6-v2", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${hfKey}`,
-          },
-          body: JSON.stringify({ inputs: [text] }),
-          signal: AbortSignal.timeout(8000),
-        });
-
-        if (res.ok) {
-          const data: any = await res.json();
-          if (Array.isArray(data)) {
-            const vector = Array.isArray(data[0]) ? data[0] : data;
-            // Pad or trim vector to 768 dimensions for consistency with local/gemini if needed
-            // all-MiniLM-L6-v2 is 384 dimensions. To mix it, it has to match the DB schema.
-            // But since local is 768 and gemini is 768, we need 768. 
-            // Wait, returning a 384-dim vector will break dot product if DB expects 768!
-            // Let's just pass it to the local fallback if HF is 384 dim.
-            console.warn("[AIGateway] HuggingFace returned 384-dim vector, using Local Fallback instead to maintain 768-dim consistency.");
-          }
-        }
-      } catch (err) {
-         console.warn("[AIGateway] Hugging Face embedding failed, falling back:", String(err).slice(0, 100));
-      }
-    }
-
-    // 3. Local Deterministic 768-Dim Dense Fallback (0 API, 0 latency, 100% uptime guaranteed)
-    const fallbackVector = createLocalDenseProjection(text);
+    // 2. Ultimate Safe Fallback
     return {
-      vector: fallbackVector,
+      vector: createLocalDenseProjection(text),
       provider: "local",
-      model: "deterministic-dense-projection-768",
+      model: "deterministic-dense-projection-384",
     };
   }
 }
 
 /**
- * Generates an in-memory 768-dimensional normalized projection vector without external API calls.
+ * Generates an in-memory 384-dimensional normalized projection vector 
+ * purely as an ultimate fallback if Transformers.js fails.
  */
 function createLocalDenseProjection(text: string): number[] {
-  const dim = 768;
+  const dim = 384; // Matched to all-MiniLM-L6-v2
   const vector = new Array(dim).fill(0);
   const words = text.toLowerCase().split(/\W+/).filter(Boolean);
 
