@@ -15,16 +15,38 @@ import { adminAuth, adminDb } from "../config/firebase.js";
 
 const router = Router();
 
-// Password utility
-function hashPassword(password: string): { salt: string; hash: string } {
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
-  return { salt, hash };
+import util from "util";
+
+const pbkdf2Async = util.promisify(crypto.pbkdf2);
+const PBKDF2_ITERATIONS = 600000;
+const PBKDF2_KEYLEN = 64;
+const PBKDF2_DIGEST = "sha512";
+
+// OWASP-compliant Password utility (600,000 rounds of PBKDF2-HMAC-SHA512)
+async function hashPassword(password: string): Promise<{ salt: string; hash: string }> {
+  const salt = crypto.randomBytes(16).toString("hex");
+  const derivedKey = await pbkdf2Async(password, salt, PBKDF2_ITERATIONS, PBKDF2_KEYLEN, PBKDF2_DIGEST);
+  return { salt, hash: derivedKey.toString("hex") };
 }
 
-function verifyPassword(password: string, salt: string, hash: string): boolean {
-  const checkHash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
-  return hash === checkHash;
+async function verifyPassword(password: string, salt: string, hash: string): Promise<boolean> {
+  if (!salt || !hash) return false;
+  try {
+    const checkKey = await pbkdf2Async(password, salt, PBKDF2_ITERATIONS, PBKDF2_KEYLEN, PBKDF2_DIGEST);
+    const checkHex = checkKey.toString("hex");
+    if (hash.length === checkHex.length && crypto.timingSafeEqual(Buffer.from(hash, "hex"), Buffer.from(checkHex, "hex"))) {
+      return true;
+    }
+    // Backward-compatibility check for legacy 1,000-iteration hashes
+    const legacyKey = await pbkdf2Async(password, salt, 1000, PBKDF2_KEYLEN, PBKDF2_DIGEST);
+    const legacyHex = legacyKey.toString("hex");
+    if (hash.length === legacyHex.length && crypto.timingSafeEqual(Buffer.from(hash, "hex"), Buffer.from(legacyHex, "hex"))) {
+      return true;
+    }
+  } catch (err) {
+    console.error("Password verification error:", err);
+  }
+  return false;
 }
 
 // REGISTER ENDPOINT
@@ -48,7 +70,7 @@ router.post("/register", async (req, res) => {
     return res.status(400).json({ error: "This email address is already registered." });
   }
 
-  const { salt, hash } = hashPassword(password);
+  const { salt, hash } = await hashPassword(password);
   const userId = `user-${Date.now()}`;
   const newUser: DbUser = {
     id: userId,
@@ -92,39 +114,13 @@ router.post("/register", async (req, res) => {
 // LOGIN ENDPOINT
 router.post("/login", async (req, res) => {
   const { username, password } = req.body;
-  if (!username) {
-    return res.status(400).json({ error: "Username or Email is required." });
-  }
-
-  const identifier = username.toLowerCase().trim();
-  const isAdminBypass = identifier === "pseudo-user@gmail.com";
-
-  if (!isAdminBypass && !password) {
+  if (!username || !password) {
     return res.status(400).json({ error: "Username/Email and password are required." });
   }
 
-  let user = await findUserByUsernameOrEmail(username);
-
-  if (isAdminBypass) {
-    if (!user) {
-      user = {
-        id: "admin-pseudo-user",
-        username: "pseudo-user",
-        email: "pseudo-user@gmail.com",
-        salt: "",
-        hash: "",
-        avatar: "👑",
-        bio: "Admin Companion Account",
-        genres: "All Categories",
-        createdAt: new Date().toISOString()
-      };
-      await saveUser(user);
-      await saveUserData(user.id, [], [], []);
-    }
-  } else {
-    if (!user || !verifyPassword(password, user.salt, user.hash)) {
-      return res.status(401).json({ error: "Invalid username, email, or password." });
-    }
+  const user = await findUserByUsernameOrEmail(username);
+  if (!user || !(await verifyPassword(password, user.salt, user.hash))) {
+    return res.status(401).json({ error: "Invalid username, email, or password." });
   }
 
   // Create session
@@ -151,30 +147,58 @@ router.post("/login", async (req, res) => {
 
 // GOOGLE AUTH / FIRESTORE SIGN-IN ENDPOINT
 router.post("/google", async (req, res) => {
-  const { uid, email, displayName, photoURL } = req.body;
-  if (!uid && !email) {
-    return res.status(400).json({ error: "Google credentials are missing." });
+  const { idToken, uid: clientUid, email: clientEmail, displayName: clientDisplayName, photoURL: clientPhotoURL } = req.body;
+
+  let verifiedUid: string | null = null;
+  let verifiedEmail: string | null = null;
+  let verifiedDisplayName: string | null = null;
+  let verifiedPhotoURL: string | null = null;
+
+  if (idToken && adminAuth) {
+    try {
+      const decodedToken = await adminAuth.verifyIdToken(idToken);
+      verifiedUid = decodedToken.uid;
+      verifiedEmail = decodedToken.email || null;
+      verifiedDisplayName = decodedToken.name || null;
+      verifiedPhotoURL = decodedToken.picture || null;
+    } catch (err: any) {
+      console.error("Firebase ID Token verification failed:", err.message);
+      return res.status(401).json({ error: "Invalid or expired Firebase ID token." });
+    }
+  } else {
+    // In environments where Firebase Admin is not initialized, fallback to client-supplied credentials
+    if (adminAuth && process.env.NODE_ENV === "production") {
+      return res.status(401).json({ error: "Firebase ID token is required for authentication." });
+    }
+    verifiedUid = clientUid || null;
+    verifiedEmail = clientEmail || null;
+    verifiedDisplayName = clientDisplayName || null;
+    verifiedPhotoURL = clientPhotoURL || null;
+  }
+
+  if (!verifiedUid && !verifiedEmail) {
+    return res.status(400).json({ error: "Google credentials are missing or invalid." });
   }
 
   try {
     let user: DbUser | null = null;
-    if (email) {
-      user = await findUserByUsernameOrEmail(email);
+    if (verifiedEmail) {
+      user = await findUserByUsernameOrEmail(verifiedEmail);
     }
-    if (!user && uid) {
-      user = await findUserById(uid);
+    if (!user && verifiedUid) {
+      user = await findUserById(verifiedUid);
     }
 
     if (!user) {
-      const userId = uid || `google-${Date.now()}`;
-      const username = displayName || (email ? email.split('@')[0] : 'User');
+      const userId = verifiedUid || `google-${Date.now()}`;
+      const username = verifiedDisplayName || (verifiedEmail ? verifiedEmail.split('@')[0] : 'User');
       user = {
         id: userId,
         username: username.trim(),
-        email: email ? email.trim() : undefined,
+        email: verifiedEmail ? verifiedEmail.trim() : undefined,
         salt: "",
         hash: "",
-        avatar: photoURL || "🍿",
+        avatar: verifiedPhotoURL || "🍿",
         bio: "Signed in via Google",
         genres: "Movies, Series, Books",
         createdAt: new Date().toISOString()
@@ -183,12 +207,12 @@ router.post("/google", async (req, res) => {
       await saveUserData(user.id, [], [], []);
     } else {
       let updated = false;
-      if (photoURL && (!user.avatar || user.avatar === "🍿")) {
-        user.avatar = photoURL;
+      if (verifiedPhotoURL && (!user.avatar || user.avatar === "🍿")) {
+        user.avatar = verifiedPhotoURL;
         updated = true;
       }
-      if (displayName && (!user.username || user.username === user.email)) {
-        user.username = displayName;
+      if (verifiedDisplayName && (!user.username || user.username === user.email)) {
+        user.username = verifiedDisplayName;
         updated = true;
       }
       if (updated) {

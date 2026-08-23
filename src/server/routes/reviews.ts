@@ -480,7 +480,7 @@ router.get("/reviews/aggregate", async (req, res) => {
         fetchNytMovieReviews(titleStr),
         tmdbId ? fetchTraktComments(tmdbId as string, type) : Promise.resolve([]),
         titleStr ? fetchOmdbCriticScores(titleStr, releaseYearStr, imdbIdStr) : Promise.resolve({}),
-        (type === 'movie' || type === 'tv') && titleStr ? fetchLetterboxdData(titleStr, releaseYearStr, imdbIdStr) : Promise.resolve({ reviews: [] }),
+        (type === 'movie' || type === 'tv') && titleStr ? fetchLetterboxdData(titleStr, releaseYearStr, imdbIdStr) : Promise.resolve<{ reviews: ReviewItem[]; score?: { rating: number; count: number } }>({ reviews: [] }),
       ]);
 
       reviews.push(...nytReviews);
@@ -507,7 +507,7 @@ router.get("/reviews/aggregate", async (req, res) => {
 Return strictly a JSON object with:
 - 'consensusSummary': 1 eloquent, balanced sentence summarizing audience and critic sentiment.
 - 'highlightPositive': A brief phrase on what audiences loved.
-- 'highlightCritique': A brief phrase on what critics noted.`;
+- 'highlightCritique': A brief phrase on critics noted.`;
 
           const aiRes = await ai.models.generateContent({
             model: "gemini-3.5-flash",
@@ -542,7 +542,7 @@ Return strictly a JSON object with:
       count: reviews.length,
     };
 
-    serverReviewsCache.set(cacheKey, payload);
+    serverReviewsCache.set(cacheKey, { timestamp: Date.now(), ttl: 1000 * 60 * 60, data: payload });
     return res.json(payload);
   } catch (error: any) {
     console.error("[ReviewsRoute] Aggregation failed:", error);

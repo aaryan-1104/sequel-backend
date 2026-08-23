@@ -413,9 +413,9 @@ const REFRESH_CACHE = new Map<string, { timestamp: number; data: any }>();
 const REFRESH_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
 router.post("/tmdb-refresh", async (req, res) => {
-  const { title, type, creators } = req.body;
-  if (!title) {
-    return res.status(400).json({ error: "Title is required." });
+  const { title, type, creators, tvdbId, releaseYear, runtime, releaseDate } = req.body;
+  if (!title && !tvdbId) {
+    return res.status(400).json({ error: "Title or tvdbId is required." });
   }
 
   // Support Book and Audiobook refresh via iTunes & Google Books APIs
@@ -465,7 +465,8 @@ router.post("/tmdb-refresh", async (req, res) => {
     return res.status(400).json({ error: "Invalid request or TMDB API key missing." });
   }
 
-  const cacheKey = `${type}-${title.toLowerCase().trim()}`;
+  const cleanTitle = (title || '').toLowerCase().trim();
+  const cacheKey = `${type}-${tvdbId || cleanTitle}-${releaseYear || ''}`;
   const now = Date.now();
   if (REFRESH_CACHE.has(cacheKey)) {
     const cached = REFRESH_CACHE.get(cacheKey)!;
@@ -480,39 +481,80 @@ router.post("/tmdb-refresh", async (req, res) => {
     const tmdbKey = rawKey.replace(/^Bearer\s+/i, '').trim();
     const isBearer = tmdbKey.length > 40;
     const tmdbType = type === 'tv' ? 'tv' : 'movie';
-    const tmdbUrl = `https://api.themoviedb.org/3/search/${tmdbType}?query=${encodeURIComponent(title)}&language=en-US&page=1&include_adult=false${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
-    
     const headers = {
       accept: 'application/json',
       ...(isBearer && { Authorization: `Bearer ${tmdbKey}` })
     };
+
+    // ── 1. TV Shows: Try Direct TheTVDB ID Resolution via TMDB /find ──
+    if (tmdbType === 'tv' && tvdbId) {
+      const cleanTvdbId = String(tvdbId).replace(/\D/g, '');
+      if (cleanTvdbId) {
+        const findUrl = `https://api.themoviedb.org/3/find/${cleanTvdbId}?external_source=tvdb_id&language=en-US${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
+        try {
+          const findRes = await fetch(findUrl, { headers, signal: AbortSignal.timeout(8000) });
+          if (findRes.ok) {
+            const findData = await findRes.json();
+            const tvMatch = findData.tv_results?.[0];
+            if (tvMatch) {
+              const refreshData = {
+                tmdbId: `tmdb-${tvMatch.id}`,
+                id: tvMatch.id,
+                coverUrl: tvMatch.poster_path ? `https://image.tmdb.org/t/p/w500${tvMatch.poster_path}` : null,
+                backdropUrl: tvMatch.backdrop_path ? `https://image.tmdb.org/t/p/w1280${tvMatch.backdrop_path}` : null,
+                synopsis: tvMatch.overview || null,
+              };
+              REFRESH_CACHE.set(cacheKey, { timestamp: now, data: refreshData });
+              return res.json(refreshData);
+            }
+          }
+        } catch (findErr) {
+          console.warn(`[TMDB /find] Failed for TVDB ID ${cleanTvdbId}:`, findErr);
+        }
+      }
+    }
+
+    // ── 2. Movies & Fallback TV: Multi-Level Disambiguated Search ──
+    const yearParam = releaseYear ? (tmdbType === 'movie' ? `&primary_release_year=${releaseYear}` : `&first_air_date_year=${releaseYear}`) : '';
+    const tmdbUrl = `https://api.themoviedb.org/3/search/${tmdbType}?query=${encodeURIComponent(title || '')}&language=en-US&page=1&include_adult=false${yearParam}${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
     
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 12000);
 
     const tmdbRes = await fetch(tmdbUrl, { headers, signal: controller.signal }).finally(() => clearTimeout(timeoutId));
-    console.log(`[TMDB Refresh] Request: ${tmdbUrl}`);
-    console.log(`[TMDB Refresh] Response Status: ${tmdbRes.status}`);
+    console.log(`[TMDB Refresh] Request: ${tmdbUrl} (Status: ${tmdbRes.status})`);
 
     if (tmdbRes.ok) {
       const tmdbData = await tmdbRes.json();
-      console.log(`[TMDB Refresh] Received ${tmdbData.results?.length || 0} results`);
-      const firstResult = (tmdbData.results || []).find((item: any) => item.media_type === tmdbType || item.media_type === undefined);
-      
-      if (firstResult) {
+      const results = tmdbData.results || [];
+      console.log(`[TMDB Refresh] Received ${results.length} results`);
+
+      let matchedResult = results[0];
+
+      // If multiple candidates exist for a movie and year/runtime is provided
+      if (results.length > 1 && releaseYear) {
+        const exactYearMatch = results.find((r: any) => {
+          const itemDate = r.release_date || r.first_air_date || '';
+          return itemDate.startsWith(String(releaseYear));
+        });
+        if (exactYearMatch) {
+          matchedResult = exactYearMatch;
+        }
+      }
+
+      if (matchedResult) {
         const refreshData = {
-          tmdbId: `tmdb-${firstResult.id}`,
-          coverUrl: firstResult.poster_path ? `https://image.tmdb.org/t/p/w500${firstResult.poster_path}` : null,
-          backdropUrl: firstResult.backdrop_path ? `https://image.tmdb.org/t/p/w1280${firstResult.backdrop_path}` : null,
-          synopsis: firstResult.overview || null,
+          tmdbId: `tmdb-${matchedResult.id}`,
+          id: matchedResult.id,
+          coverUrl: matchedResult.poster_path ? `https://image.tmdb.org/t/p/w500${matchedResult.poster_path}` : null,
+          backdropUrl: matchedResult.backdrop_path ? `https://image.tmdb.org/t/p/w1280${matchedResult.backdrop_path}` : null,
+          synopsis: matchedResult.overview || null,
         };
         REFRESH_CACHE.set(cacheKey, { timestamp: now, data: refreshData });
         return res.json(refreshData);
       }
-    } else {
-      const errorText = await tmdbRes.text();
-      console.error(`[TMDB Refresh] Error Response Body: ${errorText}`);
     }
+
     return res.status(404).json({ error: "No TMDB result found." });
   } catch (error) {
     console.error("TMDB refresh failed:", error);

@@ -40,7 +40,6 @@ const withTimeout = <T>(promise: Promise<T>, ms = 8000): Promise<T> => {
 
 export async function findUserByUsernameOrEmail(identifier: string): Promise<DbUser | null> {
   identifier = identifier.toLowerCase().trim();
-  const isAdmin = identifier === "pseudo-user@gmail.com";
 
   if (adminDb) {
     try {
@@ -59,48 +58,10 @@ export async function findUserByUsernameOrEmail(identifier: string): Promise<DbU
     }
   }
 
-  if (isAdmin) {
-    const adminUser: DbUser = {
-      id: "admin-pseudo-user",
-      username: "pseudo-user",
-      email: "pseudo-user@gmail.com",
-      salt: "",
-      hash: "",
-      avatar: "👑",
-      bio: "Admin User",
-      genres: "All Categories",
-      createdAt: new Date().toISOString()
-    };
-    inMemoryUsers.set(adminUser.id, adminUser);
-    if (adminDb) {
-      saveUser(adminUser).catch(() => {});
-    }
-    return adminUser;
-  }
-
   return null;
 }
 
 export async function findUserById(id: string): Promise<DbUser | null> {
-  if (id === "admin-pseudo-user") {
-    let admin = inMemoryUsers.get("admin-pseudo-user");
-    if (!admin) {
-      admin = {
-        id: "admin-pseudo-user",
-        username: "pseudo-user",
-        email: "pseudo-user@gmail.com",
-        salt: "",
-        hash: "",
-        avatar: "👑",
-        bio: "Admin User",
-        genres: "All Categories",
-        createdAt: new Date().toISOString()
-      };
-      inMemoryUsers.set("admin-pseudo-user", admin);
-    }
-    return admin;
-  }
-
   if (adminDb) {
     try {
       const doc: any = await withTimeout(adminDb.collection("users").doc(id).get());
