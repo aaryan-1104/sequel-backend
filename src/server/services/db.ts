@@ -139,6 +139,29 @@ export async function getUserIdByToken(token: string): Promise<string | null> {
 export async function getUserData(userId: string) {
   if (adminDb) {
     try {
+      // 1. Check Granular Subcollections first
+      const itemsSnap = await withTimeout(adminDb.collection("users").doc(userId).collection("items").get()) as any;
+      const diarySnap = await withTimeout(adminDb.collection("users").doc(userId).collection("diary").get()) as any;
+      const listsSnap = await withTimeout(adminDb.collection("users").doc(userId).collection("lists").get()) as any;
+      const metaDoc = await withTimeout(adminDb.collection("users").doc(userId).collection("meta").doc("preferences").get()) as any;
+
+      if (!itemsSnap.empty || !diarySnap.empty || !listsSnap.empty) {
+        const library = itemsSnap.docs.map((d: any) => d.data());
+        const diary = diarySnap.docs.map((d: any) => d.data());
+        const customLists = listsSnap.docs.map((d: any) => d.data());
+        const metaData = metaDoc.exists ? metaDoc.data() : {};
+
+        return {
+          library,
+          diary,
+          customLists,
+          customCollections: metaData?.customCollections || [],
+          dismissedRecommendations: metaData?.dismissedRecommendations || [],
+          settings: metaData?.settings || {},
+        };
+      }
+
+      // 2. Fallback to Legacy Monolithic user_data document
       const doc: any = await withTimeout(adminDb.collection("user_data").doc(userId).get());
       if (doc.exists) {
         const data = doc.data() || {};
@@ -156,6 +179,88 @@ export async function getUserData(userId: string) {
     }
   }
   return inMemoryUserData.get(userId) || { library: [], diary: [], customLists: [], customCollections: [], dismissedRecommendations: [], settings: {} };
+}
+
+export async function saveUserItem(userId: string, item: any) {
+  if (!item || !item.id) return;
+  const existing = inMemoryUserData.get(userId) || { library: [], diary: [], customLists: [], customCollections: [], dismissedRecommendations: [], settings: {} };
+  const idx = existing.library.findIndex((i: any) => String(i.id) === String(item.id));
+  if (idx >= 0) {
+    existing.library[idx] = item;
+  } else {
+    existing.library.push(item);
+  }
+  inMemoryUserData.set(userId, existing);
+
+  if (adminDb) {
+    try {
+      await withTimeout(
+        adminDb.collection("users").doc(userId).collection("items").doc(String(item.id)).set(item, { merge: true })
+      );
+    } catch (err: any) {
+      console.error("Firestore error (saveUserItem):", err.message);
+    }
+  }
+}
+
+export async function deleteUserItem(userId: string, itemId: string | number) {
+  if (!itemId) return;
+  const existing = inMemoryUserData.get(userId);
+  if (existing) {
+    existing.library = existing.library.filter((i: any) => String(i.id) !== String(itemId));
+    inMemoryUserData.set(userId, existing);
+  }
+
+  if (adminDb) {
+    try {
+      await withTimeout(
+        adminDb.collection("users").doc(userId).collection("items").doc(String(itemId)).delete()
+      );
+    } catch (err: any) {
+      console.error("Firestore error (deleteUserItem):", err.message);
+    }
+  }
+}
+
+export async function saveUserDiaryEntry(userId: string, entry: any) {
+  if (!entry || !entry.id) return;
+  const existing = inMemoryUserData.get(userId) || { library: [], diary: [], customLists: [], customCollections: [], dismissedRecommendations: [], settings: {} };
+  const idx = existing.diary.findIndex((d: any) => String(d.id) === String(entry.id));
+  if (idx >= 0) {
+    existing.diary[idx] = entry;
+  } else {
+    existing.diary.push(entry);
+  }
+  inMemoryUserData.set(userId, existing);
+
+  if (adminDb) {
+    try {
+      await withTimeout(
+        adminDb.collection("users").doc(userId).collection("diary").doc(String(entry.id)).set(entry, { merge: true })
+      );
+    } catch (err: any) {
+      console.error("Firestore error (saveUserDiaryEntry):", err.message);
+    }
+  }
+}
+
+export async function deleteUserDiaryEntry(userId: string, entryId: string | number) {
+  if (!entryId) return;
+  const existing = inMemoryUserData.get(userId);
+  if (existing) {
+    existing.diary = existing.diary.filter((d: any) => String(d.id) !== String(entryId));
+    inMemoryUserData.set(userId, existing);
+  }
+
+  if (adminDb) {
+    try {
+      await withTimeout(
+        adminDb.collection("users").doc(userId).collection("diary").doc(String(entryId)).delete()
+      );
+    } catch (err: any) {
+      console.error("Firestore error (deleteUserDiaryEntry):", err.message);
+    }
+  }
 }
 
 export async function saveUserData(
@@ -188,6 +293,7 @@ export async function saveUserData(
 
   if (adminDb) {
     try {
+      // 1. Maintain Legacy user_data document for backward compatibility
       const update: any = {};
       if (library !== undefined) update.library = library;
       if (diary !== undefined) update.diary = diary;
@@ -196,6 +302,42 @@ export async function saveUserData(
       if (dismissedRecommendations !== undefined) update.dismissedRecommendations = dismissedRecommendations;
       if (settings !== undefined) update.settings = settings;
       await withTimeout(adminDb.collection("user_data").doc(userId).set(update, { merge: true }));
+
+      // 2. Batch write to subcollections (/users/{userId}/items, etc.)
+      const batch = adminDb.batch();
+      if (Array.isArray(library)) {
+        for (const item of library) {
+          if (item?.id) {
+            const docRef = adminDb.collection("users").doc(userId).collection("items").doc(String(item.id));
+            batch.set(docRef, item, { merge: true });
+          }
+        }
+      }
+      if (Array.isArray(diary)) {
+        for (const entry of diary) {
+          if (entry?.id) {
+            const docRef = adminDb.collection("users").doc(userId).collection("diary").doc(String(entry.id));
+            batch.set(docRef, entry, { merge: true });
+          }
+        }
+      }
+      if (Array.isArray(customLists)) {
+        for (const list of customLists) {
+          if (list?.id) {
+            const docRef = adminDb.collection("users").doc(userId).collection("lists").doc(String(list.id));
+            batch.set(docRef, list, { merge: true });
+          }
+        }
+      }
+      const metaRef = adminDb.collection("users").doc(userId).collection("meta").doc("preferences");
+      batch.set(metaRef, {
+        customCollections: customCollections || [],
+        dismissedRecommendations: dismissedRecommendations || [],
+        settings: settings || {},
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+
+      await withTimeout(batch.commit());
       return;
     } catch (err: any) {
       console.error("Firestore error (saveUserData):", err.message);

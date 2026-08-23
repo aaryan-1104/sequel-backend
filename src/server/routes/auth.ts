@@ -9,7 +9,11 @@ import {
   deleteSession, 
   getUserIdByToken, 
   getUserData, 
-  saveUserData 
+  saveUserData,
+  saveUserItem,
+  deleteUserItem,
+  saveUserDiaryEntry,
+  deleteUserDiaryEntry
 } from "../services/db.js";
 import { adminAuth, adminDb } from "../config/firebase.js";
 
@@ -418,6 +422,68 @@ router.post("/sync-save", async (req, res) => {
   return res.json({ success: true });
 });
 
+// ATOMIC ITEM UPSERT (/users/{userId}/items/{itemId})
+router.post("/sync-item", async (req, res) => {
+  const { token, item } = req.body;
+  if (!token || !item || !item.id) {
+    return res.status(400).json({ error: "Invalid payload. Token and item with ID are required." });
+  }
 
+  const userId = await getUserIdByToken(token);
+  if (!userId) {
+    return res.status(401).json({ error: "Invalid session." });
+  }
+
+  await saveUserItem(userId, item);
+  return res.json({ success: true });
+});
+
+// ATOMIC ITEM DELETE
+router.post("/sync-item-delete", async (req, res) => {
+  const { token, itemId } = req.body;
+  if (!token || !itemId) {
+    return res.status(400).json({ error: "Invalid payload. Token and itemId are required." });
+  }
+
+  const userId = await getUserIdByToken(token);
+  if (!userId) {
+    return res.status(401).json({ error: "Invalid session." });
+  }
+
+  await deleteUserItem(userId, itemId);
+  return res.json({ success: true });
+});
+
+// ATOMIC DIARY UPSERT
+router.post("/sync-diary", async (req, res) => {
+  const { token, entry } = req.body;
+  if (!token || !entry || !entry.id) {
+    return res.status(400).json({ error: "Invalid payload. Token and entry with ID are required." });
+  }
+
+  const userId = await getUserIdByToken(token);
+  if (!userId) {
+    return res.status(401).json({ error: "Invalid session." });
+  }
+
+  await saveUserDiaryEntry(userId, entry);
+  return res.json({ success: true });
+});
+
+// ATOMIC DIARY DELETE
+router.post("/sync-diary-delete", async (req, res) => {
+  const { token, entryId } = req.body;
+  if (!token || !entryId) {
+    return res.status(400).json({ error: "Invalid payload. Token and entryId are required." });
+  }
+
+  const userId = await getUserIdByToken(token);
+  if (!userId) {
+    return res.status(401).json({ error: "Invalid session." });
+  }
+
+  await deleteUserDiaryEntry(userId, entryId);
+  return res.json({ success: true });
+});
 
 export default router;

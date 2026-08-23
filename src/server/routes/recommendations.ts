@@ -219,8 +219,9 @@ router.post("/recommendations", async (req: Request, res: Response) => {
       if (item.title) trackedSet.add(String(item.title).trim().toLowerCase());
     }
 
-    // 3. Cold Start check (< 2 library items)
-    if (!Array.isArray(library) || library.length < 2) {
+    // 3. Cold Start check (< 10 library items)
+    if (!Array.isArray(library) || library.length < 10) {
+      console.log("[Recommendations] Cold start detected (< 10 items). Falling back to trending/popular.");
       const fallback = candidates
         .filter(c => !trackedSet.has(c.id.toLowerCase()) && !trackedSet.has(c.title.trim().toLowerCase()))
         .sort((a, b) => (b.voteAverage || 0) - (a.voteAverage || 0))
