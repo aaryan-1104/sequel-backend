@@ -633,6 +633,65 @@ router.all("/tmdb-details", async (req, res) => {
       });
       const combinedSimilar = Array.from(combinedSimilarMap.values());
 
+      let computedStatus: string | null = null;
+      let computedTvSpecifics: any = null;
+
+      const userProgress = parseInt(String((req.body && req.body.progress) || (req.query && req.query.progress) || '0'), 10);
+      const totalEps = tmdbData.number_of_episodes || 0;
+      const totalSeasons = tmdbData.number_of_seasons || 1;
+      const seasonsList = (tmdbData.seasons || []).filter((s: any) => s.season_number > 0);
+
+      if (tmdbType === 'tv' && userProgress > 0) {
+        const watchedMap: Record<string, boolean> = {};
+        if (totalEps > 0 && userProgress >= totalEps) {
+          computedStatus = 'completed';
+          seasonsList.forEach((s: any) => {
+            const epCount = s.episode_count || 0;
+            for (let e = 1; e <= epCount; e++) {
+              watchedMap[`S${s.season_number}E${e}`] = true;
+            }
+          });
+          const lastSeason = seasonsList[seasonsList.length - 1];
+          computedTvSpecifics = {
+            currentSeason: lastSeason ? lastSeason.season_number : totalSeasons,
+            currentEpisode: lastSeason ? (lastSeason.episode_count || 1) : 1,
+            totalSeasons,
+            totalEpisodes: totalEps,
+            watchedEpisodes: watchedMap,
+          };
+        } else {
+          computedStatus = 'in-progress';
+          let remaining = userProgress;
+          let currentSeason = 1;
+          let currentEpisode = 1;
+
+          for (const s of seasonsList) {
+            const count = s.episode_count || 0;
+            if (remaining > count) {
+              for (let e = 1; e <= count; e++) {
+                watchedMap[`S${s.season_number}E${e}`] = true;
+              }
+              remaining -= count;
+            } else {
+              for (let e = 1; e <= remaining; e++) {
+                watchedMap[`S${s.season_number}E${e}`] = true;
+              }
+              currentSeason = s.season_number;
+              currentEpisode = Math.min(remaining + 1, count);
+              break;
+            }
+          }
+
+          computedTvSpecifics = {
+            currentSeason,
+            currentEpisode,
+            totalSeasons,
+            totalEpisodes: totalEps,
+            watchedEpisodes: watchedMap,
+          };
+        }
+      }
+
       const detailsData = {
         rating: tmdbData.vote_average,
         voteCount: tmdbData.vote_count || 0,
@@ -671,7 +730,9 @@ router.all("/tmdb-details", async (req, res) => {
           airDate: tmdbData.next_episode_to_air.air_date,
         } : null,
         ageRating,
-        imdbId
+        imdbId,
+        computedStatus,
+        tvSpecifics: computedTvSpecifics
       };
       
       DETAILS_CACHE.set(cacheKey, { timestamp: now, data: detailsData });
