@@ -15,6 +15,7 @@ import {
   saveUserDiaryEntry,
   deleteUserDiaryEntry
 } from "../services/db.js";
+import { signJwtToken } from "../utils/jwt.js";
 import { adminAuth, adminDb } from "../config/firebase.js";
 
 const router = Router();
@@ -93,8 +94,8 @@ router.post("/register", async (req, res) => {
   // Initialize user details
   await saveUserData(userId, [], [], []);
 
-  // Create session
-  const token = `session-${crypto.randomBytes(24).toString("hex")}`;
+  // Create stateless signed JWT session token
+  const token = signJwtToken(userId);
   await createSession(userId, token);
 
   return res.json({
@@ -127,8 +128,8 @@ router.post("/login", async (req, res) => {
     return res.status(401).json({ error: "Invalid username, email, or password." });
   }
 
-  // Create session
-  const token = `session-${crypto.randomBytes(24).toString("hex")}`;
+  // Create stateless signed JWT session token
+  const token = signJwtToken(user.id);
   await createSession(user.id, token);
 
   return res.json({
@@ -224,7 +225,7 @@ router.post("/google", async (req, res) => {
       }
     }
 
-    const token = `session-${crypto.randomBytes(24).toString("hex")}`;
+    const token = signJwtToken(user.id);
     await createSession(user.id, token);
 
     return res.json({

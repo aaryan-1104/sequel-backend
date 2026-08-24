@@ -1,4 +1,5 @@
 import { adminDb } from "../config/firebase.js";
+import { verifyJwtToken } from "../utils/jwt.js";
 
 export interface DbUser {
   id: string;
@@ -122,13 +123,30 @@ export async function deleteSession(token: string) {
 }
 
 export async function getUserIdByToken(token: string): Promise<string | null> {
+  if (!token || typeof token !== "string") return null;
+
+  // 1. Instant Stateless Cryptographic Verification (0ms, 0 network calls)
+  const jwtUserId = verifyJwtToken(token);
+  if (jwtUserId) {
+    return jwtUserId;
+  }
+
+  // 2. In-Memory Cache fallback for legacy raw session tokens
   if (inMemorySessions.has(token)) {
     return inMemorySessions.get(token)!;
   }
+
+  // 3. Firestore fallback for legacy non-JWT sessions
   if (adminDb) {
     try {
       const doc: any = await withTimeout(adminDb.collection("sessions").doc(token).get());
-      if (doc.exists) return doc.data()?.userId;
+      if (doc.exists) {
+        const userId = doc.data()?.userId;
+        if (userId) {
+          inMemorySessions.set(token, userId);
+          return userId;
+        }
+      }
     } catch (err: any) {
       console.error("Firestore error (getUserIdByToken):", err.message);
     }
