@@ -409,18 +409,23 @@ router.post("/sync-get", async (req, res) => {
 
 // SYNC DATA SAVE
 router.post("/sync-save", async (req, res) => {
-  const { token, library, diary, customLists, dismissedRecommendations, customCollections, settings } = req.body;
-  if (!token) {
-    return res.status(401).json({ error: "Unauthorized." });
-  }
+  try {
+    const { token, library, diary, customLists, dismissedRecommendations, customCollections, settings } = req.body;
+    if (!token) {
+      return res.status(401).json({ error: "Unauthorized." });
+    }
 
-  const userId = await getUserIdByToken(token);
-  if (!userId) {
-    return res.status(401).json({ error: "Invalid session." });
-  }
+    const userId = await getUserIdByToken(token);
+    if (!userId) {
+      return res.status(401).json({ error: "Invalid session." });
+    }
 
-  await saveUserData(userId, library, diary, customLists, dismissedRecommendations, customCollections, settings);
-  return res.json({ success: true });
+    await saveUserData(userId, library, diary, customLists, dismissedRecommendations, customCollections, settings);
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("Sync save failed:", err);
+    return res.status(500).json({ error: err?.message || "Failed to save user data." });
+  }
 });
 
 // ATOMIC ITEM UPSERT (/users/{userId}/items/{itemId})

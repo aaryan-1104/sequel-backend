@@ -311,23 +311,31 @@ export async function saveUserData(
 
   if (adminDb) {
     try {
-      // 1. Maintain Legacy user_data document for backward compatibility
+      // 1. Maintain Legacy user_data document for small payloads (< 200 items to respect 1MB doc limit)
       const update: any = {};
-      if (library !== undefined) update.library = library;
-      if (diary !== undefined) update.diary = diary;
+      if (library !== undefined && library.length <= 200) update.library = library;
+      if (diary !== undefined && diary.length <= 200) update.diary = diary;
       if (customLists !== undefined) update.customLists = customLists;
       if (customCollections !== undefined) update.customCollections = customCollections;
       if (dismissedRecommendations !== undefined) update.dismissedRecommendations = dismissedRecommendations;
       if (settings !== undefined) update.settings = settings;
-      await withTimeout(adminDb.collection("user_data").doc(userId).set(update, { merge: true }));
 
-      // 2. Batch write to subcollections (/users/{userId}/items, etc.)
-      const batch = adminDb.batch();
+      if (Object.keys(update).length > 0) {
+        try {
+          await withTimeout(adminDb.collection("user_data").doc(userId).set(update, { merge: true }), 10000);
+        } catch (e: any) {
+          console.warn("Legacy user_data doc write skipped/failed (likely large payload):", e.message);
+        }
+      }
+
+      // 2. Safe chunked batch writes to subcollections (/users/{userId}/items, etc., max 400 ops per batch)
+      const allOps: Array<{ ref: any; data: any }> = [];
+
       if (Array.isArray(library)) {
         for (const item of library) {
           if (item?.id) {
             const docRef = adminDb.collection("users").doc(userId).collection("items").doc(String(item.id));
-            batch.set(docRef, item, { merge: true });
+            allOps.push({ ref: docRef, data: item });
           }
         }
       }
@@ -335,7 +343,7 @@ export async function saveUserData(
         for (const entry of diary) {
           if (entry?.id) {
             const docRef = adminDb.collection("users").doc(userId).collection("diary").doc(String(entry.id));
-            batch.set(docRef, entry, { merge: true });
+            allOps.push({ ref: docRef, data: entry });
           }
         }
       }
@@ -343,22 +351,35 @@ export async function saveUserData(
         for (const list of customLists) {
           if (list?.id) {
             const docRef = adminDb.collection("users").doc(userId).collection("lists").doc(String(list.id));
-            batch.set(docRef, list, { merge: true });
+            allOps.push({ ref: docRef, data: list });
           }
         }
       }
       const metaRef = adminDb.collection("users").doc(userId).collection("meta").doc("preferences");
-      batch.set(metaRef, {
-        customCollections: customCollections || [],
-        dismissedRecommendations: dismissedRecommendations || [],
-        settings: settings || {},
-        updatedAt: new Date().toISOString(),
-      }, { merge: true });
+      allOps.push({
+        ref: metaRef,
+        data: {
+          customCollections: customCollections || [],
+          dismissedRecommendations: dismissedRecommendations || [],
+          settings: settings || {},
+          updatedAt: new Date().toISOString(),
+        }
+      });
 
-      await withTimeout(batch.commit());
+      // Commit in chunks of 400 operations to respect Firestore's 500 ops batch limit
+      const CHUNK_SIZE = 400;
+      for (let i = 0; i < allOps.length; i += CHUNK_SIZE) {
+        const chunk = allOps.slice(i, i + CHUNK_SIZE);
+        const batch = adminDb.batch();
+        for (const op of chunk) {
+          batch.set(op.ref, op.data, { merge: true });
+        }
+        await withTimeout(batch.commit(), 20000);
+      }
       return;
     } catch (err: any) {
       console.error("Firestore error (saveUserData):", err.message);
+      throw err;
     }
   }
 }
