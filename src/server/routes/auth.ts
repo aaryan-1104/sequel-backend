@@ -118,13 +118,60 @@ router.post("/register", async (req, res) => {
 
 // LOGIN ENDPOINT
 router.post("/login", async (req, res) => {
-  const { username, password } = req.body;
+  const { username, password, idToken } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: "Username/Email and password are required." });
   }
 
-  const user = await findUserByUsernameOrEmail(username);
-  if (!user || !(await verifyPassword(password, user.salt, user.hash))) {
+  let user = await findUserByUsernameOrEmail(username);
+
+  let isPasswordValid = false;
+
+  // 1. If client provided a Firebase ID token (e.g. authenticated via Firebase client or after password reset)
+  if (idToken && adminAuth) {
+    try {
+      const decoded = await adminAuth.verifyIdToken(idToken);
+      const decodedEmail = decoded.email?.toLowerCase().trim();
+      const inputEmail = username.toLowerCase().trim();
+      if (decodedEmail && (decodedEmail === inputEmail || (user && user.email?.toLowerCase().trim() === decodedEmail))) {
+        isPasswordValid = true;
+        // If user exists, sync new password hash to database so both systems remain in sync
+        if (user) {
+          const { salt, hash } = await hashPassword(password);
+          user.salt = salt;
+          user.hash = hash;
+          await saveUser(user);
+        } else {
+          // If user exists in Firebase Auth but not yet in DB, create record
+          const userId = decoded.uid || `user-${Date.now()}`;
+          const derivedUsername = decoded.name || inputEmail.split('@')[0] || 'User';
+          const { salt, hash } = await hashPassword(password);
+          user = {
+            id: userId,
+            username: derivedUsername,
+            email: decodedEmail,
+            salt,
+            hash,
+            avatar: decoded.picture || "🍿",
+            bio: "",
+            genres: "",
+            createdAt: new Date().toISOString()
+          };
+          await saveUser(user);
+          await saveUserData(user.id, [], [], []);
+        }
+      }
+    } catch (err: any) {
+      console.warn("Firebase ID token verification failed in /login:", err.message);
+    }
+  }
+
+  // 2. Fallback to standard custom password hash verification if ID token was not verified
+  if (!isPasswordValid && user) {
+    isPasswordValid = await verifyPassword(password, user.salt, user.hash);
+  }
+
+  if (!user || !isPasswordValid) {
     return res.status(401).json({ error: "Invalid username, email, or password." });
   }
 
