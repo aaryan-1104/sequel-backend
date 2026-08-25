@@ -2,7 +2,7 @@ import "dotenv/config";
 import { getUserData } from "../src/server/services/db.js";
 
 async function test() {
-  const userId = "user-1785955687430"; // Main user ID
+  const userId = "9fBabMgtWaW7QWd0nW6O0l2zK543"; // Main user ID
   console.log("Fetching full library from CockroachDB for user:", userId);
 
   const start = performance.now();

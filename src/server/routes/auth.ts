@@ -10,6 +10,7 @@ import {
   getUserIdByToken, 
   getUserData, 
   getPaginatedLibrary,
+  mergeUserData,
   saveUserData,
   saveUserItem,
   deleteUserItem,
@@ -141,6 +142,10 @@ router.post("/login", async (req, res) => {
           const { salt, hash } = await hashPassword(password);
           user.salt = salt;
           user.hash = hash;
+          if (decoded.uid && user.id !== decoded.uid) {
+            await mergeUserData(user.id, decoded.uid);
+            user.id = decoded.uid;
+          }
           await saveUser(user);
         } else {
           // If user exists in Firebase Auth but not yet in DB, create record
@@ -259,6 +264,10 @@ router.post("/google", async (req, res) => {
       await saveUser(user);
       await saveUserData(user.id, [], [], []);
     } else {
+      if (verifiedUid && user.id !== verifiedUid) {
+        await mergeUserData(user.id, verifiedUid);
+        user.id = verifiedUid;
+      }
       let updated = false;
       if (verifiedPhotoURL && (!user.avatar || user.avatar === "🍿")) {
         user.avatar = verifiedPhotoURL;
@@ -268,7 +277,7 @@ router.post("/google", async (req, res) => {
         user.username = verifiedDisplayName;
         updated = true;
       }
-      if (updated) {
+      if (updated || (verifiedUid && user.id === verifiedUid)) {
         await saveUser(user);
       }
     }

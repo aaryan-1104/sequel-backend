@@ -700,3 +700,21 @@ export async function getPaginatedLibrary(
     }
   };
 }
+
+export async function mergeUserData(fromUserId: string, toUserId: string) {
+  if (!fromUserId || !toUserId || fromUserId === toUserId) return;
+  userDataCache.delete(fromUserId);
+  userDataCache.delete(toUserId);
+
+  if (isDatabaseConfigured() && db) {
+    try {
+      await db.update(mediaItems).set({ userId: toUserId }).where(eq(mediaItems.userId, fromUserId));
+      await db.update(diaryEntries).set({ userId: toUserId }).where(eq(diaryEntries.userId, fromUserId));
+      await db.update(customLists).set({ userId: toUserId }).where(eq(customLists.userId, fromUserId));
+      await db.delete(userSettings).where(eq(userSettings.userId, toUserId));
+      await db.update(userSettings).set({ userId: toUserId }).where(eq(userSettings.userId, fromUserId));
+    } catch (err: any) {
+      console.error("PostgreSQL error (mergeUserData):", err.message);
+    }
+  }
+}
