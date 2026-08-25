@@ -353,14 +353,22 @@ export async function getUserData(userId: string) {
       const settings = settingsRows.length > 0 ? settingsRows[0] : null;
 
       const result = {
-        library: items.map(i => ({
-          ...i,
-          coverUrl: i.poster || (i as any).coverUrl || "",
-          backdropUrl: i.backdrop || (i as any).backdropUrl || "",
-          genres: i.genres || [],
-          tags: i.tags || [],
-          watchedEpisodes: i.watchedEpisodes || i.tvSpecifics?.watchedEpisodes || {},
-        })),
+        library: items.map(i => {
+          const meta: any = i.rawMetadata || {};
+          return {
+            ...i,
+            coverUrl: i.poster || (i as any).coverUrl || "",
+            backdropUrl: i.backdrop || (i as any).backdropUrl || "",
+            genres: i.genres || [],
+            tags: i.tags || [],
+            creators: (i as any).creators || meta.creators || [],
+            platforms: (i as any).platforms || meta.platforms || [],
+            runtime: (i as any).runtime || meta.runtime || "",
+            progress: (i as any).progress ?? meta.progress ?? 0,
+            movieSpecifics: (i as any).movieSpecifics || meta.movieSpecifics || null,
+            watchedEpisodes: i.watchedEpisodes || i.tvSpecifics?.watchedEpisodes || {},
+          };
+        }),
         diary: diary.map(d => ({
           id: d.id,
           mediaId: d.itemId || (d as any).mediaId || "",
@@ -446,6 +454,15 @@ export async function saveUserItem(userId: string, item: any) {
         }
       }
 
+      const mergedMetadata = {
+        ...(typeof item.rawMetadata === "object" && item.rawMetadata ? item.rawMetadata : {}),
+        creators: Array.isArray(item.creators) ? item.creators : undefined,
+        platforms: Array.isArray(item.platforms) ? item.platforms : undefined,
+        runtime: item.runtime || undefined,
+        progress: typeof item.progress === "number" ? item.progress : undefined,
+        movieSpecifics: item.movieSpecifics || undefined,
+      };
+
       await db.insert(mediaItems).values({
         id: targetId,
         userId,
@@ -462,19 +479,14 @@ export async function saveUserItem(userId: string, item: any) {
         backdrop: item.backdrop || null,
         releaseDate: item.releaseDate || item.firstAirDate || null,
         genres: Array.isArray(item.genres) ? item.genres : [],
-        creators: Array.isArray(item.creators) ? item.creators : [],
-        platforms: Array.isArray(item.platforms) ? item.platforms : [],
-        runtime: item.runtime || null,
-        progress: typeof item.progress === "number" ? item.progress : null,
         notes: item.notes || null,
         tags: Array.isArray(item.tags) ? item.tags : [],
         userProgress: item.userProgress || null,
         totalEpisodes: typeof item.totalEpisodes === "number" ? item.totalEpisodes : null,
         watchedEpisodes: item.watchedEpisodes || item.tvSpecifics?.watchedEpisodes || {},
-        movieSpecifics: item.movieSpecifics || null,
         tvSpecifics: item.tvSpecifics || null,
         bookSpecifics: item.bookSpecifics || null,
-        rawMetadata: item.rawMetadata || null,
+        rawMetadata: mergedMetadata,
         addedAt: item.addedAt || new Date().toISOString(),
         lastUpdatedAt: item.lastUpdatedAt || new Date().toISOString(),
       }).onConflictDoUpdate({
@@ -489,16 +501,12 @@ export async function saveUserItem(userId: string, item: any) {
           backdrop: item.backdrop || null,
           notes: item.notes || null,
           genres: Array.isArray(item.genres) ? item.genres : [],
-          creators: Array.isArray(item.creators) ? item.creators : [],
-          platforms: Array.isArray(item.platforms) ? item.platforms : [],
-          runtime: item.runtime || null,
-          progress: typeof item.progress === "number" ? item.progress : null,
           tags: Array.isArray(item.tags) ? item.tags : [],
           userProgress: item.userProgress || null,
           watchedEpisodes: item.watchedEpisodes || item.tvSpecifics?.watchedEpisodes || {},
-          movieSpecifics: item.movieSpecifics || null,
           tvSpecifics: item.tvSpecifics || null,
           bookSpecifics: item.bookSpecifics || null,
+          rawMetadata: mergedMetadata,
           lastUpdatedAt: item.lastUpdatedAt || new Date().toISOString(),
         }
       });
@@ -766,6 +774,15 @@ export async function saveUserData(
             }
           }
 
+          const mergedMetadata = {
+            ...(typeof item.rawMetadata === "object" && item.rawMetadata ? item.rawMetadata : {}),
+            creators: Array.isArray(item.creators) ? item.creators : undefined,
+            platforms: Array.isArray(item.platforms) ? item.platforms : undefined,
+            runtime: item.runtime || undefined,
+            progress: typeof item.progress === "number" ? item.progress : undefined,
+            movieSpecifics: item.movieSpecifics || undefined,
+          };
+
           await db.insert(mediaItems).values({
             id: targetId,
             userId,
@@ -782,19 +799,14 @@ export async function saveUserData(
             backdrop: item.backdrop || null,
             releaseDate: item.releaseDate || item.firstAirDate || null,
             genres: Array.isArray(item.genres) ? item.genres : [],
-            creators: Array.isArray(item.creators) ? item.creators : [],
-            platforms: Array.isArray(item.platforms) ? item.platforms : [],
-            runtime: item.runtime || null,
-            progress: typeof item.progress === "number" ? item.progress : null,
             notes: item.notes || null,
             tags: Array.isArray(item.tags) ? item.tags : [],
             userProgress: item.userProgress || null,
             totalEpisodes: typeof item.totalEpisodes === "number" ? item.totalEpisodes : null,
             watchedEpisodes: item.watchedEpisodes || item.tvSpecifics?.watchedEpisodes || {},
-            movieSpecifics: item.movieSpecifics || null,
             tvSpecifics: item.tvSpecifics || null,
             bookSpecifics: item.bookSpecifics || null,
-            rawMetadata: item.rawMetadata || null,
+            rawMetadata: mergedMetadata,
             addedAt: item.addedAt || new Date().toISOString(),
             lastUpdatedAt: item.lastUpdatedAt || new Date().toISOString(),
           }).onConflictDoUpdate({
@@ -809,16 +821,12 @@ export async function saveUserData(
               backdrop: item.backdrop || null,
               notes: item.notes || null,
               genres: Array.isArray(item.genres) ? item.genres : [],
-              creators: Array.isArray(item.creators) ? item.creators : [],
-              platforms: Array.isArray(item.platforms) ? item.platforms : [],
-              runtime: item.runtime || null,
-              progress: typeof item.progress === "number" ? item.progress : null,
               tags: Array.isArray(item.tags) ? item.tags : [],
               userProgress: item.userProgress || null,
               watchedEpisodes: item.watchedEpisodes || item.tvSpecifics?.watchedEpisodes || {},
-              movieSpecifics: item.movieSpecifics || null,
               tvSpecifics: item.tvSpecifics || null,
               bookSpecifics: item.bookSpecifics || null,
+              rawMetadata: mergedMetadata,
               lastUpdatedAt: item.lastUpdatedAt || new Date().toISOString(),
             }
           });
