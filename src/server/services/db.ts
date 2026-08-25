@@ -494,6 +494,7 @@ export async function saveUserItem(userId: string, item: any) {
         set: {
           tmdbId: incomingTmdbId,
           tvdbId: incomingTvdbId,
+          imdbId: item.imdbId ? String(item.imdbId) : undefined,
           status: item.status || "planned",
           rating: typeof item.rating === "number" ? item.rating : null,
           favorite: Boolean(item.favorite),
@@ -814,6 +815,7 @@ export async function saveUserData(
             set: {
               tmdbId: incomingTmdbId,
               tvdbId: incomingTvdbId,
+              imdbId: item.imdbId ? String(item.imdbId) : undefined,
               status: item.status || "planned",
               rating: typeof item.rating === "number" ? item.rating : null,
               favorite: Boolean(item.favorite),
