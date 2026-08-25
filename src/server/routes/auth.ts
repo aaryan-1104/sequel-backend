@@ -9,6 +9,7 @@ import {
   deleteSession, 
   getUserIdByToken, 
   getUserData, 
+  getPaginatedLibrary,
   saveUserData,
   saveUserItem,
   deleteUserItem,
@@ -408,7 +409,7 @@ router.post("/update-profile", async (req, res) => {
 
 // SYNC DATA GET (Supports Partitioned / Scoped Hydration)
 router.post("/sync-get", async (req, res) => {
-  const { token, scope = "all", fields } = req.body;
+  const { token, scope = "all", fields, page, limit, type, status, search, sortBy } = req.body;
   if (!token) {
     return res.status(401).json({ error: "Unauthorized." });
   }
@@ -416,6 +417,20 @@ router.post("/sync-get", async (req, res) => {
   const userId = await getUserIdByToken(token);
   if (!userId) {
     return res.status(401).json({ error: "Invalid session." });
+  }
+
+  // 1. If explicit pagination requested (e.g. page=1, limit=50)
+  if (page !== undefined || limit !== undefined) {
+    const paginated = await getPaginatedLibrary(userId, { page, limit, type, status, search, sortBy });
+    const fullData = await getUserData(userId);
+    return res.json({
+      library: paginated.items,
+      pagination: paginated.pagination,
+      customCollections: fullData.customCollections || [],
+      dismissedRecommendations: fullData.dismissedRecommendations || [],
+      settings: fullData.settings || {},
+      customLists: fullData.customLists || []
+    });
   }
 
   const data: any = await getUserData(userId);
@@ -452,6 +467,22 @@ router.post("/sync-get", async (req, res) => {
   }
 
   return res.json(data);
+});
+
+// DEDICATED PAGINATED LIBRARY ENDPOINT
+router.post("/library", async (req, res) => {
+  const { token, page = 1, limit = 50, type, status, search, sortBy } = req.body;
+  if (!token) {
+    return res.status(401).json({ error: "Unauthorized." });
+  }
+
+  const userId = await getUserIdByToken(token);
+  if (!userId) {
+    return res.status(401).json({ error: "Invalid session." });
+  }
+
+  const result = await getPaginatedLibrary(userId, { page, limit, type, status, search, sortBy });
+  return res.json(result);
 });
 
 // SYNC DATA SAVE
