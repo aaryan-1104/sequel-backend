@@ -31,7 +31,7 @@ const inMemoryUserData = new Map<string, {
 }>();
 
 const userDataCache = new Map<string, { data: any, timestamp: number }>();
-const CACHE_TTL_MS = 5 * 60 * 1000;
+const CACHE_TTL_MS = 15 * 1000; // 15 seconds short-lived memory cache
 
 const TMDB_GENRES: Record<number, string> = {
   28: "Action", 12: "Adventure", 16: "Animation", 35: "Comedy", 80: "Crime",
