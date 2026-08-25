@@ -12,6 +12,8 @@ import {
   getPaginatedLibrary,
   mergeUserData,
   saveUserData,
+  saveUserCustomLists,
+  saveUserSettingsAndCollections,
   saveUserItem,
   deleteUserItem,
   saveUserDiaryEntry,
@@ -457,6 +459,7 @@ router.post("/sync-get", async (req, res) => {
   if (scope === "dashboard") {
     return res.json({
       library: data.library || [],
+      customLists: data.customLists || [],
       customCollections: data.customCollections || [],
       dismissedRecommendations: data.dismissedRecommendations || [],
       settings: data.settings || {}
@@ -576,6 +579,38 @@ router.post("/sync-diary-delete", async (req, res) => {
   }
 
   await deleteUserDiaryEntry(userId, entryId);
+  return res.json({ success: true });
+});
+
+// ATOMIC CUSTOM LISTS UPSERT / SYNC
+router.post("/sync-lists", async (req, res) => {
+  const { token, customLists } = req.body;
+  if (!token || !Array.isArray(customLists)) {
+    return res.status(400).json({ error: "Invalid payload. Token and customLists array are required." });
+  }
+
+  const userId = await getUserIdByToken(token);
+  if (!userId) {
+    return res.status(401).json({ error: "Invalid session." });
+  }
+
+  await saveUserCustomLists(userId, customLists);
+  return res.json({ success: true });
+});
+
+// ATOMIC SETTINGS & COLLECTIONS SYNC
+router.post("/sync-settings", async (req, res) => {
+  const { token, customCollections, dismissedRecommendations, settings } = req.body;
+  if (!token) {
+    return res.status(401).json({ error: "Unauthorized." });
+  }
+
+  const userId = await getUserIdByToken(token);
+  if (!userId) {
+    return res.status(401).json({ error: "Invalid session." });
+  }
+
+  await saveUserSettingsAndCollections(userId, { customCollections, dismissedRecommendations, settings });
   return res.json({ success: true });
 });
 

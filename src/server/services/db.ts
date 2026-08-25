@@ -1,6 +1,6 @@
 import { adminDb } from "../config/firebase.js";
 import { verifyJwtToken } from "../utils/jwt.js";
-import { db, isDatabaseConfigured } from "../db/index.js";
+import { db, pool, isDatabaseConfigured } from "../db/index.js";
 import { users, mediaItems, diaryEntries, customLists, userSettings, sessions } from "../db/schema.js";
 import { eq, or, sql, and } from "drizzle-orm";
 
@@ -32,6 +32,78 @@ const inMemoryUserData = new Map<string, {
 
 const userDataCache = new Map<string, { data: any, timestamp: number }>();
 const CACHE_TTL_MS = 5 * 60 * 1000;
+
+const TMDB_GENRES: Record<number, string> = {
+  28: "Action", 12: "Adventure", 16: "Animation", 35: "Comedy", 80: "Crime",
+  99: "Documentary", 18: "Drama", 10751: "Family", 14: "Fantasy", 36: "History",
+  27: "Horror", 10402: "Music", 9648: "Mystery", 10749: "Romance", 878: "Science Fiction",
+  10770: "TV Movie", 53: "Thriller", 10752: "War", 37: "Western", 10759: "Action & Adventure",
+  10762: "Kids", 10763: "News", 10764: "Reality", 10765: "Sci-Fi & Fantasy", 10766: "Soap",
+  10767: "Talk", 10768: "War & Politics"
+};
+
+export async function enrichItemFromTmdb(item: any): Promise<any> {
+  if (!item || (item.type !== 'tv' && item.type !== 'movie')) return item;
+  if (item.tmdbId && item.poster && item.backdrop) return item;
+
+  const rawKey = process.env.TMDB_API_KEY || '';
+  const tmdbKey = rawKey.replace(/^Bearer\s+/i, '').trim();
+  const isBearer = tmdbKey.length > 40;
+  const headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+    'Accept': 'application/json',
+    ...(isBearer ? { 'Authorization': `Bearer ${tmdbKey}` } : {})
+  };
+
+  const tmdbType = item.type === 'movie' ? 'movie' : 'tv';
+  let match: any = null;
+
+  // 1. Try TVDB ID resolution
+  if (item.tvdbId) {
+    const cleanTvdbId = String(item.tvdbId).replace(/\D/g, '');
+    if (cleanTvdbId) {
+      try {
+        const findUrl = `https://api.tmdb.org/3/find/${cleanTvdbId}?external_source=tvdb_id&language=en-US${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
+        const res = await fetch(findUrl, { headers, signal: AbortSignal.timeout(6000) });
+        if (res.ok) {
+          const data = await res.json();
+          match = data.tv_results?.[0] || data.movie_results?.[0];
+        }
+      } catch (e) {}
+    }
+  }
+
+  // 2. Try Title Search fallback
+  if (!match && item.title) {
+    try {
+      const cleanTitle = (item.title || '').replace(/\s*\(\d{4}\)$/, '').trim();
+      const searchUrl = `https://api.tmdb.org/3/search/${tmdbType}?query=${encodeURIComponent(cleanTitle)}&language=en-US&page=1${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
+      const res = await fetch(searchUrl, { headers, signal: AbortSignal.timeout(6000) });
+      if (res.ok) {
+        const data = await res.json();
+        match = data.results?.[0];
+      }
+    } catch (e) {}
+  }
+
+  if (match && match.id) {
+    const genreNames = Array.isArray(match.genre_ids) 
+      ? match.genre_ids.map((gid: number) => TMDB_GENRES[gid]).filter(Boolean)
+      : [];
+
+    return {
+      ...item,
+      tmdbId: `tmdb-${match.id}`,
+      poster: item.poster || item.coverUrl || (match.poster_path ? `https://image.tmdb.org/t/p/w500${match.poster_path}` : null),
+      backdrop: item.backdrop || (match.backdrop_path ? `https://image.tmdb.org/t/p/w1280${match.backdrop_path}` : null),
+      releaseDate: item.releaseDate || match.first_air_date || match.release_date || null,
+      genres: (item.genres && item.genres.length > 0) ? item.genres : genreNames,
+      notes: item.notes || match.overview || null,
+    };
+  }
+
+  return item;
+}
 
 export async function findUserByUsernameOrEmail(identifier: string): Promise<DbUser | null> {
   identifier = identifier.toLowerCase().trim();
@@ -283,9 +355,11 @@ export async function getUserData(userId: string) {
       const result = {
         library: items.map(i => ({
           ...i,
+          coverUrl: i.poster || (i as any).coverUrl || "",
+          backdropUrl: i.backdrop || (i as any).backdropUrl || "",
           genres: i.genres || [],
           tags: i.tags || [],
-          watchedEpisodes: i.watchedEpisodes || {},
+          watchedEpisodes: i.watchedEpisodes || i.tvSpecifics?.watchedEpisodes || {},
         })),
         diary: diary.map(d => ({ ...d })),
         customLists: lists.map(l => ({ ...l, itemIds: l.itemIds || [] })),
@@ -331,18 +405,46 @@ export async function saveUserItem(userId: string, item: any) {
 
   if (isDatabaseConfigured() && db) {
     try {
+      const incomingId = String(item.id);
+      const incomingSourceId = item.sourceId ? String(item.sourceId) : null;
+      const incomingTvdbId = item.tvdbId ? String(item.tvdbId) : null;
+      const incomingTmdbId = item.tmdbId ? String(item.tmdbId).replace(/^(tmdb-)+/, '') : null;
+
+      // Smart de-duplication: check if an existing row already exists for this user by ID, sourceId, tvdbId, or tmdbId
+      let targetId = incomingId;
+      if (pool) {
+        try {
+          const existingMatch = await pool.query(
+            `SELECT id FROM media_items 
+             WHERE user_id = $1 AND (
+               id = $2 OR 
+               (source_id IS NOT NULL AND source_id = $3) OR 
+               (tvdb_id IS NOT NULL AND tvdb_id = $4) OR 
+               (tmdb_id IS NOT NULL AND tmdb_id = $5)
+             ) LIMIT 1;`,
+            [userId, incomingId, incomingSourceId, incomingTvdbId, incomingTmdbId]
+          );
+
+          if (existingMatch.rows.length > 0) {
+            targetId = existingMatch.rows[0].id;
+          }
+        } catch (matchErr) {
+          // Non-blocking fallback
+        }
+      }
+
       await db.insert(mediaItems).values({
-        id: String(item.id),
+        id: targetId,
         userId,
-        sourceId: item.sourceId ? String(item.sourceId) : null,
-        tmdbId: item.tmdbId ? String(item.tmdbId) : null,
-        tvdbId: item.tvdbId ? String(item.tvdbId) : null,
+        sourceId: incomingSourceId,
+        tmdbId: incomingTmdbId,
+        tvdbId: incomingTvdbId,
         imdbId: item.imdbId ? String(item.imdbId) : null,
         title: item.title || "Untitled",
         type: item.type || "movie",
         status: item.status || "planned",
         rating: typeof item.rating === "number" ? item.rating : null,
-        poster: item.poster || null,
+        poster: item.coverUrl || item.poster || null,
         backdrop: item.backdrop || null,
         releaseDate: item.releaseDate || item.firstAirDate || null,
         genres: Array.isArray(item.genres) ? item.genres : [],
@@ -350,7 +452,7 @@ export async function saveUserItem(userId: string, item: any) {
         tags: Array.isArray(item.tags) ? item.tags : [],
         userProgress: item.userProgress || null,
         totalEpisodes: typeof item.totalEpisodes === "number" ? item.totalEpisodes : null,
-        watchedEpisodes: item.watchedEpisodes || {},
+        watchedEpisodes: item.watchedEpisodes || item.tvSpecifics?.watchedEpisodes || {},
         tvSpecifics: item.tvSpecifics || null,
         bookSpecifics: item.bookSpecifics || null,
         rawMetadata: item.rawMetadata || null,
@@ -359,13 +461,19 @@ export async function saveUserItem(userId: string, item: any) {
       }).onConflictDoUpdate({
         target: [mediaItems.userId, mediaItems.id],
         set: {
+          tmdbId: incomingTmdbId,
+          tvdbId: incomingTvdbId,
           status: item.status || "planned",
           rating: typeof item.rating === "number" ? item.rating : null,
-          poster: item.poster || null,
+          poster: item.coverUrl || item.poster || null,
           backdrop: item.backdrop || null,
           notes: item.notes || null,
+          genres: Array.isArray(item.genres) ? item.genres : [],
+          tags: Array.isArray(item.tags) ? item.tags : [],
           userProgress: item.userProgress || null,
-          watchedEpisodes: item.watchedEpisodes || {},
+          watchedEpisodes: item.watchedEpisodes || item.tvSpecifics?.watchedEpisodes || {},
+          tvSpecifics: item.tvSpecifics || null,
+          bookSpecifics: item.bookSpecifics || null,
           lastUpdatedAt: item.lastUpdatedAt || new Date().toISOString(),
         }
       });
@@ -476,6 +584,101 @@ export async function deleteUserDiaryEntry(userId: string, entryId: string | num
   }
 }
 
+export async function saveUserCustomLists(userId: string, lists: any[]) {
+  userDataCache.delete(userId);
+  if (!Array.isArray(lists)) return;
+
+  if (isDatabaseConfigured() && db) {
+    try {
+      const activeIds = new Set<string>();
+      for (const list of lists) {
+        if (!list || !list.id) continue;
+        const sId = String(list.id);
+        activeIds.add(sId);
+        await db.insert(customLists).values({
+          id: sId,
+          userId,
+          name: list.name || "Untitled List",
+          description: list.description || "",
+          isTmdbSync: Boolean(list.isTmdbSync),
+          tmdbListId: list.tmdbListId ? String(list.tmdbListId) : null,
+          coverImage: list.coverImage || null,
+          itemIds: Array.isArray(list.itemIds) ? list.itemIds : [],
+          createdAt: list.createdAt || new Date().toISOString(),
+          updatedAt: list.updatedAt || new Date().toISOString()
+        }).onConflictDoUpdate({
+          target: [customLists.userId, customLists.id],
+          set: {
+            name: list.name || "Untitled List",
+            description: list.description || "",
+            isTmdbSync: Boolean(list.isTmdbSync),
+            tmdbListId: list.tmdbListId ? String(list.tmdbListId) : null,
+            coverImage: list.coverImage || null,
+            itemIds: Array.isArray(list.itemIds) ? list.itemIds : [],
+            updatedAt: new Date().toISOString()
+          }
+        });
+      }
+
+      const existingLists = await db.select({ id: customLists.id }).from(customLists).where(eq(customLists.userId, userId));
+      for (const el of existingLists) {
+        if (!activeIds.has(el.id)) {
+          await db.delete(customLists).where(and(eq(customLists.userId, userId), eq(customLists.id, el.id)));
+        }
+      }
+      return;
+    } catch (err: any) {
+      console.error("PostgreSQL error (saveUserCustomLists):", err.message);
+    }
+  }
+
+  if (adminDb) {
+    try {
+      await adminDb.collection("user_data").doc(userId).set({ customLists: lists }, { merge: true });
+    } catch (err: any) {
+      console.error("Firestore error (saveUserCustomLists):", err.message);
+    }
+  }
+}
+
+export async function saveUserSettingsAndCollections(
+  userId: string,
+  data: { customCollections?: any[]; dismissedRecommendations?: any[]; settings?: any }
+) {
+  userDataCache.delete(userId);
+
+  if (isDatabaseConfigured() && db) {
+    try {
+      await db.insert(userSettings).values({
+        userId,
+        customCollections: data.customCollections || [],
+        dismissedRecommendations: data.dismissedRecommendations || [],
+        settings: data.settings || {},
+        updatedAt: new Date().toISOString()
+      }).onConflictDoUpdate({
+        target: userSettings.userId,
+        set: {
+          ...(data.customCollections !== undefined ? { customCollections: data.customCollections } : {}),
+          ...(data.dismissedRecommendations !== undefined ? { dismissedRecommendations: data.dismissedRecommendations } : {}),
+          ...(data.settings !== undefined ? { settings: data.settings } : {}),
+          updatedAt: new Date().toISOString()
+        }
+      });
+      return;
+    } catch (err: any) {
+      console.error("PostgreSQL error (saveUserSettingsAndCollections):", err.message);
+    }
+  }
+
+  if (adminDb) {
+    try {
+      await adminDb.collection("user_data").doc(userId).set(data, { merge: true });
+    } catch (err: any) {
+      console.error("Firestore error (saveUserSettingsAndCollections):", err.message);
+    }
+  }
+}
+
 export async function saveUserData(
   userId: string,
   library?: any[],
@@ -490,20 +693,62 @@ export async function saveUserData(
   if (isDatabaseConfigured() && db) {
     try {
       if (Array.isArray(library) && library.length > 0) {
+        // Asynchronously enrich missing items in background if any exist (e.g. from TV Time CSV imports)
+        const unpopulated = library.filter(i => (!i.tmdbId || i.tmdbId === '') && (i.type === 'tv' || i.type === 'movie'));
+        if (unpopulated.length > 0) {
+          (async () => {
+            for (const unpop of unpopulated) {
+              try {
+                const enriched = await enrichItemFromTmdb(unpop);
+                if (enriched.tmdbId) {
+                  await saveUserItem(userId, enriched);
+                }
+              } catch (e) {}
+            }
+          })().catch(() => {});
+        }
+
         for (const item of library) {
           if (!item || !item.id) continue;
+          const incomingId = String(item.id);
+          const incomingSourceId = item.sourceId ? String(item.sourceId) : null;
+          const incomingTvdbId = item.tvdbId ? String(item.tvdbId) : null;
+          const incomingTmdbId = item.tmdbId ? String(item.tmdbId) : null;
+
+          let targetId = incomingId;
+          if (incomingSourceId || incomingTvdbId || incomingTmdbId) {
+            try {
+              const existingMatch = await pool.query(
+                `SELECT id FROM media_items 
+                 WHERE user_id = $1 AND (
+                   id = $2 OR 
+                   (source_id IS NOT NULL AND source_id = $3) OR 
+                   (tvdb_id IS NOT NULL AND tvdb_id = $4) OR 
+                   (tmdb_id IS NOT NULL AND tmdb_id = $5)
+                 ) LIMIT 1;`,
+                [userId, incomingId, incomingSourceId, incomingTvdbId, incomingTmdbId]
+              );
+
+              if (existingMatch.rows.length > 0) {
+                targetId = existingMatch.rows[0].id;
+              }
+            } catch (matchErr) {
+              // Non-blocking fallback
+            }
+          }
+
           await db.insert(mediaItems).values({
-            id: String(item.id),
+            id: targetId,
             userId,
-            sourceId: item.sourceId ? String(item.sourceId) : null,
-            tmdbId: item.tmdbId ? String(item.tmdbId) : null,
-            tvdbId: item.tvdbId ? String(item.tvdbId) : null,
+            sourceId: incomingSourceId,
+            tmdbId: incomingTmdbId,
+            tvdbId: incomingTvdbId,
             imdbId: item.imdbId ? String(item.imdbId) : null,
             title: item.title || "Untitled",
             type: item.type || "movie",
             status: item.status || "planned",
             rating: typeof item.rating === "number" ? item.rating : null,
-            poster: item.poster || null,
+            poster: item.poster || item.coverUrl || null,
             backdrop: item.backdrop || null,
             releaseDate: item.releaseDate || item.firstAirDate || null,
             genres: Array.isArray(item.genres) ? item.genres : [],
@@ -511,7 +756,7 @@ export async function saveUserData(
             tags: Array.isArray(item.tags) ? item.tags : [],
             userProgress: item.userProgress || null,
             totalEpisodes: typeof item.totalEpisodes === "number" ? item.totalEpisodes : null,
-            watchedEpisodes: item.watchedEpisodes || {},
+            watchedEpisodes: item.watchedEpisodes || item.tvSpecifics?.watchedEpisodes || {},
             tvSpecifics: item.tvSpecifics || null,
             bookSpecifics: item.bookSpecifics || null,
             rawMetadata: item.rawMetadata || null,
@@ -520,13 +765,19 @@ export async function saveUserData(
           }).onConflictDoUpdate({
             target: [mediaItems.userId, mediaItems.id],
             set: {
+              tmdbId: incomingTmdbId,
+              tvdbId: incomingTvdbId,
               status: item.status || "planned",
               rating: typeof item.rating === "number" ? item.rating : null,
-              poster: item.poster || null,
+              poster: item.poster || item.coverUrl || null,
               backdrop: item.backdrop || null,
               notes: item.notes || null,
+              genres: Array.isArray(item.genres) ? item.genres : [],
+              tags: Array.isArray(item.tags) ? item.tags : [],
               userProgress: item.userProgress || null,
-              watchedEpisodes: item.watchedEpisodes || {},
+              watchedEpisodes: item.watchedEpisodes || item.tvSpecifics?.watchedEpisodes || {},
+              tvSpecifics: item.tvSpecifics || null,
+              bookSpecifics: item.bookSpecifics || null,
               lastUpdatedAt: item.lastUpdatedAt || new Date().toISOString(),
             }
           });
@@ -569,7 +820,18 @@ export async function saveUserData(
             itemIds: Array.isArray(list.itemIds) ? list.itemIds : [],
             createdAt: list.createdAt || new Date().toISOString(),
             updatedAt: list.updatedAt || new Date().toISOString()
-          }).onConflictDoNothing();
+          }).onConflictDoUpdate({
+            target: [customLists.userId, customLists.id],
+            set: {
+              name: list.name || "Untitled List",
+              description: list.description || "",
+              isTmdbSync: Boolean(list.isTmdbSync),
+              tmdbListId: list.tmdbListId ? String(list.tmdbListId) : null,
+              coverImage: list.coverImage || null,
+              itemIds: Array.isArray(list.itemIds) ? list.itemIds : [],
+              updatedAt: new Date().toISOString()
+            }
+          });
         }
       }
 
@@ -658,9 +920,11 @@ export async function getPaginatedLibrary(
       return {
         items: items.map(i => ({
           ...i,
+          coverUrl: i.poster || (i as any).coverUrl || "",
+          backdropUrl: i.backdrop || (i as any).backdropUrl || "",
           genres: i.genres || [],
           tags: i.tags || [],
-          watchedEpisodes: i.watchedEpisodes || {},
+          watchedEpisodes: i.watchedEpisodes || i.tvSpecifics?.watchedEpisodes || {},
         })),
         pagination: {
           page,

@@ -490,7 +490,7 @@ router.post("/tmdb-refresh", async (req, res) => {
     if (tmdbType === 'tv' && tvdbId) {
       const cleanTvdbId = String(tvdbId).replace(/\D/g, '');
       if (cleanTvdbId) {
-        const findUrl = `https://api.themoviedb.org/3/find/${cleanTvdbId}?external_source=tvdb_id&language=en-US${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
+        const findUrl = `https://api.tmdb.org/3/find/${cleanTvdbId}?external_source=tvdb_id&language=en-US${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
         try {
           const findRes = await fetch(findUrl, { headers, signal: AbortSignal.timeout(8000) });
           if (findRes.ok) {
@@ -516,7 +516,7 @@ router.post("/tmdb-refresh", async (req, res) => {
 
     // ── 2. Movies & Fallback TV: Multi-Level Disambiguated Search ──
     const yearParam = releaseYear ? (tmdbType === 'movie' ? `&primary_release_year=${releaseYear}` : `&first_air_date_year=${releaseYear}`) : '';
-    const tmdbUrl = `https://api.themoviedb.org/3/search/${tmdbType}?query=${encodeURIComponent(title || '')}&language=en-US&page=1&include_adult=false${yearParam}${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
+    const tmdbUrl = `https://api.tmdb.org/3/search/${tmdbType}?query=${encodeURIComponent(title || '')}&language=en-US&page=1&include_adult=false${yearParam}${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
     
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 12000);
@@ -594,7 +594,7 @@ router.all("/tmdb-details", async (req, res) => {
     const tmdbKey = rawKey.replace(/^Bearer\s+/i, '').trim();
     const isBearer = tmdbKey.length > 40;
     const tmdbType = type === 'tv' ? 'tv' : 'movie';
-    const tmdbUrl = `https://api.themoviedb.org/3/${tmdbType}/${cleanId}?append_to_response=reviews,credits,videos,similar,recommendations,watch/providers,release_dates,content_ratings,external_ids&language=en-US${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
+    const tmdbUrl = `https://api.tmdb.org/3/${tmdbType}/${cleanId}?append_to_response=reviews,credits,videos,similar,recommendations,watch/providers,release_dates,content_ratings,external_ids&language=en-US${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
     
     const headers = {
       accept: 'application/json',
@@ -775,7 +775,7 @@ router.all("/tmdb-season", async (req, res) => {
     const tmdbKey = rawKey.replace(/^Bearer\s+/i, '').trim();
     const isBearer = tmdbKey.length > 40;
     const cleanId = tmdbId.toString().replace(/^(tmdb-tv-|tmdb-movie-|tmdb-|lib-|temp-|custom-|imported-|movie-|tv-)/, '').trim();
-    const tmdbUrl = `https://api.themoviedb.org/3/tv/${cleanId}/season/${seasonNumber}?language=en-US${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
+    const tmdbUrl = `https://api.tmdb.org/3/tv/${cleanId}/season/${seasonNumber}?language=en-US${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
     
     const headers = {
       accept: 'application/json',
@@ -808,7 +808,7 @@ router.post("/tmdb-tv/season-account-states", async (req, res) => {
     const isBearer = tmdbKey.length > 40;
     const cleanId = tmdbId.toString().replace(/^(tmdb-tv-|tmdb-movie-|tmdb-|lib-|temp-|custom-|imported-|movie-|tv-)/, '').trim();
 
-    const tmdbUrl = `https://api.themoviedb.org/3/tv/${cleanId}/season/${seasonNumber}/account_states?session_id=${sessionId}${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
+    const tmdbUrl = `https://api.tmdb.org/3/tv/${cleanId}/season/${seasonNumber}/account_states?session_id=${sessionId}${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
 
     const headers = {
       accept: 'application/json',
@@ -844,7 +844,7 @@ router.post("/tmdb-tv/episode-rate", async (req, res) => {
     const cleanId = tmdbId.toString().replace(/^(tmdb-tv-|tmdb-movie-|tmdb-|lib-|temp-|custom-|imported-|movie-|tv-)/, '').trim();
 
     const method = rating === null ? 'DELETE' : 'POST';
-    const tmdbUrl = `https://api.themoviedb.org/3/tv/${cleanId}/season/${seasonNumber}/episode/${episodeNumber}/rating?session_id=${sessionId}${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
+    const tmdbUrl = `https://api.tmdb.org/3/tv/${cleanId}/season/${seasonNumber}/episode/${episodeNumber}/rating?session_id=${sessionId}${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
 
     const headers = {
       accept: 'application/json',
@@ -887,7 +887,7 @@ router.post("/tmdb-auth/request-token", async (req, res) => {
     const isBearer = tmdbKey.length > 40;
 
     if (isBearer) {
-      const url = `https://api.themoviedb.org/4/auth/request_token`;
+      const url = `https://api.tmdb.org/4/auth/request_token`;
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${tmdbKey}`
@@ -912,7 +912,7 @@ router.post("/tmdb-auth/request-token", async (req, res) => {
       console.error("[TMDB Request Token v4] Error:", errText);
       return res.status(500).json({ error: "Failed to generate TMDB v4 request token." });
     } else {
-      const url = `https://api.themoviedb.org/3/authentication/token/new?api_key=${tmdbKey}`;
+      const url = `https://api.tmdb.org/3/authentication/token/new?api_key=${tmdbKey}`;
       const tmdbRes = await fetch(url);
       if (tmdbRes.ok) {
         const data = await tmdbRes.json();
@@ -954,7 +954,7 @@ router.post("/tmdb-auth/create-session", async (req, res) => {
       };
 
       // Step 1: Create v4 Access Token
-      const v4AccessUrl = `https://api.themoviedb.org/4/auth/access_token`;
+      const v4AccessUrl = `https://api.tmdb.org/4/auth/access_token`;
       const v4AccessRes = await fetch(v4AccessUrl, {
         method: 'POST',
         headers,
@@ -976,7 +976,7 @@ router.post("/tmdb-auth/create-session", async (req, res) => {
       const accountIdFromV4 = v4Data.account_id;
 
       // Step 2: Convert v4 Access Token to v3 Session ID
-      const convertUrl = `https://api.themoviedb.org/3/authentication/session/convert/4`;
+      const convertUrl = `https://api.tmdb.org/3/authentication/session/convert/4`;
       const convertRes = await fetch(convertUrl, {
         method: 'POST',
         headers,
@@ -997,7 +997,7 @@ router.post("/tmdb-auth/create-session", async (req, res) => {
       const sessionId = convertData.session_id;
 
       // Step 3: Fetch Account details to get username
-      const accountUrl = `https://api.themoviedb.org/3/account?session_id=${sessionId}`;
+      const accountUrl = `https://api.tmdb.org/3/account?session_id=${sessionId}`;
       const accountRes = await fetch(accountUrl, { headers });
 
       if (accountRes.ok) {
@@ -1019,7 +1019,7 @@ router.post("/tmdb-auth/create-session", async (req, res) => {
       }
     } else {
       // v3 Flow
-      const sessionUrl = `https://api.themoviedb.org/3/authentication/session/new?api_key=${tmdbKey}`;
+      const sessionUrl = `https://api.tmdb.org/3/authentication/session/new?api_key=${tmdbKey}`;
       const sessionRes = await fetch(sessionUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1040,7 +1040,7 @@ router.post("/tmdb-auth/create-session", async (req, res) => {
       const sessionId = sessionData.session_id;
 
       // Fetch Account details
-      const accountUrl = `https://api.themoviedb.org/3/account?session_id=${sessionId}&api_key=${tmdbKey}`;
+      const accountUrl = `https://api.tmdb.org/3/account?session_id=${sessionId}&api_key=${tmdbKey}`;
       const accountRes = await fetch(accountUrl);
 
       if (accountRes.ok) {
@@ -1099,8 +1099,8 @@ router.post("/tmdb-watchlist/get", async (req, res) => {
     };
 
     // Fetch movie watchlist
-    const movieUrl = `https://api.themoviedb.org/3/account/${accountId}/watchlist/movies?language=en-US&sort_by=created_at.desc&session_id=${sessionId}${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
-    const tvUrl = `https://api.themoviedb.org/3/account/${accountId}/watchlist/tv?language=en-US&sort_by=created_at.desc&session_id=${sessionId}${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
+    const movieUrl = `https://api.tmdb.org/3/account/${accountId}/watchlist/movies?language=en-US&sort_by=created_at.desc&session_id=${sessionId}${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
+    const tvUrl = `https://api.tmdb.org/3/account/${accountId}/watchlist/tv?language=en-US&sort_by=created_at.desc&session_id=${sessionId}${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
 
     const [movieRes, tvRes] = await Promise.all([
       fetch(movieUrl, { headers }),
@@ -1177,8 +1177,8 @@ router.post("/tmdb-favorite/get", async (req, res) => {
     };
 
     // Fetch movie favorites
-    const movieUrl = `https://api.themoviedb.org/3/account/${accountId}/favorite/movies?language=en-US&sort_by=created_at.desc&session_id=${sessionId}${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
-    const tvUrl = `https://api.themoviedb.org/3/account/${accountId}/favorite/tv?language=en-US&sort_by=created_at.desc&session_id=${sessionId}${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
+    const movieUrl = `https://api.tmdb.org/3/account/${accountId}/favorite/movies?language=en-US&sort_by=created_at.desc&session_id=${sessionId}${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
+    const tvUrl = `https://api.tmdb.org/3/account/${accountId}/favorite/tv?language=en-US&sort_by=created_at.desc&session_id=${sessionId}${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
 
     const [movieRes, tvRes] = await Promise.all([
       fetch(movieUrl, { headers }),
@@ -1251,7 +1251,7 @@ router.post("/tmdb-favorite/update", async (req, res) => {
     const cleanId = parseInt(tmdbId.toString().replace(/^(tmdb-tv-|tmdb-movie-|tmdb-|lib-|temp-|custom-|imported-|movie-|tv-)/, '').trim(), 10);
     const tmdbType = mediaType === 'tv' ? 'tv' : 'movie';
 
-    const url = `https://api.themoviedb.org/3/account/${accountId}/favorite?session_id=${sessionId}${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
+    const url = `https://api.tmdb.org/3/account/${accountId}/favorite?session_id=${sessionId}${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
     const body = {
       media_type: tmdbType,
       media_id: cleanId,
@@ -1292,7 +1292,7 @@ router.post("/tmdb-rating/update", async (req, res) => {
     const cleanId = tmdbId.toString().replace(/^(tmdb-tv-|tmdb-movie-|tmdb-|lib-|temp-|custom-|imported-|movie-|tv-)/, '').trim();
     const tmdbType = mediaType === 'tv' ? 'tv' : 'movie';
 
-    const tmdbUrl = `https://api.themoviedb.org/3/${tmdbType}/${cleanId}/rating?session_id=${sessionId}${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
+    const tmdbUrl = `https://api.tmdb.org/3/${tmdbType}/${cleanId}/rating?session_id=${sessionId}${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
 
     const headers = {
       accept: 'application/json',
@@ -1344,7 +1344,7 @@ router.post("/tmdb-watchlist/update", async (req, res) => {
     const cleanId = parseInt(targetId.toString().replace(/^(tmdb-tv-|tmdb-movie-|tmdb-|lib-|temp-|custom-|imported-|movie-|tv-)/, '').trim(), 10);
     const tmdbType = mediaType === 'tv' ? 'tv' : 'movie';
 
-    const url = `https://api.themoviedb.org/3/account/${accountId}/watchlist?session_id=${sessionId}${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
+    const url = `https://api.tmdb.org/3/account/${accountId}/watchlist?session_id=${sessionId}${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
     const body = {
       media_type: tmdbType,
       media_id: cleanId,
@@ -1394,7 +1394,7 @@ router.post(["/tmdb-lists/get-all", "/tmdb-lists/get"], async (req, res) => {
     // Try v4 account lists first (only works with Bearer Access Token)
     if (isBearer) {
       try {
-        const v4Url = `https://api.themoviedb.org/4/account/${accountId}/lists?page=1`;
+        const v4Url = `https://api.tmdb.org/4/account/${accountId}/lists?page=1`;
         const v4Res = await fetch(v4Url, { headers, signal: AbortSignal.timeout(10000) });
         if (v4Res.ok) {
           const v4Data = await v4Res.json();
@@ -1418,7 +1418,7 @@ router.post(["/tmdb-lists/get-all", "/tmdb-lists/get"], async (req, res) => {
     }
 
     // Try v3 account lists
-    const v3Url = `https://api.themoviedb.org/3/account/${accountId}/lists?session_id=${sessionId}${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
+    const v3Url = `https://api.tmdb.org/3/account/${accountId}/lists?session_id=${sessionId}${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
     const v3Res = await fetch(v3Url, { headers });
 
     if (v3Res.ok) {
@@ -1473,7 +1473,7 @@ router.post("/tmdb-lists/get-details", async (req, res) => {
     // 1. Try TMDB v4 list details first if Bearer Access Token is available
     if (isBearer) {
       try {
-        const v4Url = `https://api.themoviedb.org/4/list/${cleanListId}?language=en-US&page=1`;
+        const v4Url = `https://api.tmdb.org/4/list/${cleanListId}?language=en-US&page=1`;
         const v4Res = await fetch(v4Url, { headers, signal: AbortSignal.timeout(10000) });
         if (v4Res.ok) {
           const v4Data = await v4Res.json();
@@ -1497,7 +1497,7 @@ router.post("/tmdb-lists/get-details", async (req, res) => {
     }
 
     // 2. Fallback to TMDB v3 list details
-    const v3Url = `https://api.themoviedb.org/3/list/${cleanListId}?language=en-US${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
+    const v3Url = `https://api.tmdb.org/3/list/${cleanListId}?language=en-US${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
     const v3Res = await fetch(v3Url, { headers });
 
     if (v3Res.ok) {
@@ -1545,7 +1545,7 @@ router.post("/tmdb-lists/create", async (req, res) => {
     // 1. Try TMDB v4 list create first if Bearer Access Token is available
     if (isBearer) {
       try {
-        const v4Url = `https://api.themoviedb.org/4/list`;
+        const v4Url = `https://api.tmdb.org/4/list`;
         const v4Body = {
           name,
           description: description || '',
@@ -1576,7 +1576,7 @@ router.post("/tmdb-lists/create", async (req, res) => {
       return res.status(400).json({ error: "Session ID required for v3 list creation." });
     }
 
-    const v3Url = `https://api.themoviedb.org/3/list?session_id=${sessionId}${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
+    const v3Url = `https://api.tmdb.org/3/list?session_id=${sessionId}${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
     const v3Body = {
       name,
       description: description || '',
@@ -1633,7 +1633,7 @@ router.post("/tmdb-lists/update-item", async (req, res) => {
     if (isBearer) {
       try {
         const v4Method = action === 'add' ? 'POST' : 'DELETE';
-        const v4Url = `https://api.themoviedb.org/4/list/${cleanListId}/items`;
+        const v4Url = `https://api.tmdb.org/4/list/${cleanListId}/items`;
         const v4Body = {
           items: [
             {
@@ -1675,7 +1675,7 @@ router.post("/tmdb-lists/update-item", async (req, res) => {
     }
 
     const tmdbAction = action === 'add' ? 'add_item' : 'remove_item';
-    const v3Url = `https://api.themoviedb.org/3/list/${cleanListId}/${tmdbAction}?session_id=${sessionId}${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
+    const v3Url = `https://api.tmdb.org/3/list/${cleanListId}/${tmdbAction}?session_id=${sessionId}${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
     const v3Body = {
       media_id: cleanTmdbId
     };
@@ -1736,7 +1736,7 @@ router.post("/tmdb-lists/delete", async (req, res) => {
     // 1. Try TMDB v4 list delete first if Bearer Access Token is available
     if (isBearer) {
       try {
-        const v4Url = `https://api.themoviedb.org/4/list/${cleanListId}`;
+        const v4Url = `https://api.tmdb.org/4/list/${cleanListId}`;
         const v4Res = await fetch(v4Url, {
           method: 'DELETE',
           headers,
@@ -1757,7 +1757,7 @@ router.post("/tmdb-lists/delete", async (req, res) => {
       return res.status(400).json({ error: "Session ID required for v3 list delete fallback." });
     }
 
-    const v3Url = `https://api.themoviedb.org/3/list/${cleanListId}?session_id=${sessionId}${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
+    const v3Url = `https://api.tmdb.org/3/list/${cleanListId}?session_id=${sessionId}${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
     const v3Res = await fetch(v3Url, {
       method: 'DELETE',
       headers
@@ -1795,7 +1795,7 @@ router.post("/tmdb-person", async (req, res) => {
     const rawKey = process.env.TMDB_API_KEY || '';
     const tmdbKey = rawKey.replace(/^Bearer\s+/i, '').trim();
     const isBearer = tmdbKey.length > 40;
-    const tmdbUrl = `https://api.themoviedb.org/3/person/${personId}?append_to_response=combined_credits&language=en-US${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
+    const tmdbUrl = `https://api.tmdb.org/3/person/${personId}?append_to_response=combined_credits&language=en-US${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
     
     const headers = {
       accept: 'application/json',
@@ -1874,7 +1874,7 @@ router.get("/tmdb-discover", async (req, res) => {
           return cached.data;
         }
 
-        const url = `https://api.themoviedb.org/3/${endpoint}${separator}page=${pageNum}&language=en-US${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
+        const url = `https://api.tmdb.org/3/${endpoint}${separator}page=${pageNum}&language=en-US${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
         const tmdbRes = await fetch(url, { headers });
         if (tmdbRes.ok) {
           const data = await tmdbRes.json();
@@ -2261,7 +2261,7 @@ router.all("/tmdb-category", async (req, res) => {
 
   const fetchTMDB = async (endpoint: string) => {
     if (!tmdbKey) return { results: [] };
-    const response = await fetch(`https://api.themoviedb.org/3/${endpoint}&api_key=${tmdbKey}`);
+    const response = await fetch(`https://api.tmdb.org/3/${endpoint}&api_key=${tmdbKey}`);
     if (!response.ok) throw new Error("TMDB Error");
     return response.json();
   };
@@ -2399,7 +2399,7 @@ router.post("/tmdb-reviews", async (req, res) => {
     const tmdbKey = rawKey.replace(/^Bearer\s+/i, '').trim();
     const isBearer = tmdbKey.length > 40;
     const tmdbType = type === 'tv' ? 'tv' : 'movie';
-    const tmdbUrl = `https://api.themoviedb.org/3/${tmdbType}/${cleanId}/reviews?page=${page}&language=en-US${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
+    const tmdbUrl = `https://api.tmdb.org/3/${tmdbType}/${cleanId}/reviews?page=${page}&language=en-US${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
     
     const headers = {
       accept: 'application/json',
