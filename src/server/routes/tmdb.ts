@@ -2546,7 +2546,72 @@ router.get("/tmdb-streaming", async (req, res) => {
   try {
     let items: any[] = [];
     
-    if (pId === 'crunchyroll') {
+    if (pId === 'netflix' || pId === 'netflix_movies') {
+      try {
+        const tudumRes = await fetch('https://www.netflix.com/tudum/top10/data/all-weeks-global.tsv');
+        if (tudumRes.ok) {
+          const tsv = await tudumRes.text();
+          const lines = tsv.trim().split('\n');
+          if (lines.length > 1) {
+            const firstRow = lines[1].split('\t');
+            const latestWeek = firstRow[0];
+            const targetCategory = pId === 'netflix_movies' ? 'Films (English)' : 'TV (English)';
+            const tudumRows: any[] = [];
+            for (let i = 1; i < lines.length; i++) {
+              const row = lines[i].split('\t');
+              if (row[0] !== latestWeek) break;
+              if (row[1] === targetCategory) {
+                tudumRows.push({
+                  rank: parseInt(row[2], 10),
+                  title: row[3],
+                  seasonTitle: row[4],
+                  views: parseInt(row[7], 10),
+                });
+              }
+            }
+
+            if (tudumRows.length > 0) {
+              const defaultSearchType = pId === 'netflix_movies' ? 'movie' : 'tv';
+              const altSearchType = pId === 'netflix_movies' ? 'tv' : 'movie';
+              const searchResults = await Promise.all(
+                tudumRows.map(async (t) => {
+                  let search = await fetchEndpoint(`search/${defaultSearchType}?query=${encodeURIComponent(t.title)}`);
+                  if (!search.results || search.results.length === 0) {
+                    search = await fetchEndpoint(`search/${altSearchType}?query=${encodeURIComponent(t.title)}`);
+                  }
+                  const match = search.results?.[0];
+                  if (match) {
+                    const mapped = mapStreamingResult(match, match.first_air_date ? 'tv' : 'movie');
+                    return {
+                      ...mapped,
+                      rank: t.rank,
+                      views: t.views,
+                      seasonTitle: t.seasonTitle,
+                    };
+                  }
+                  return null;
+                })
+              );
+
+              const valid = searchResults.filter(Boolean);
+              if (valid.length > 0) {
+                STREAMING_CHART_CACHE.set(cacheKey, { timestamp: Date.now(), data: valid.slice(0, 10) });
+                return res.json(valid.slice(0, 10));
+              }
+            }
+          }
+        }
+      } catch (tudumErr) {
+        console.warn('Tudum fetch error, falling back to discover:', tudumErr);
+      }
+
+      const [tvData, movieData] = await Promise.all([
+        fetchEndpoint(`discover/tv?with_watch_providers=8&watch_region=US&sort_by=popularity.desc`),
+        fetchEndpoint(`discover/movie?with_watch_providers=8&watch_region=US&sort_by=popularity.desc`),
+      ]);
+      const combined = pId === 'netflix_movies' ? (movieData.results || []) : [...(tvData.results || []), ...(movieData.results || [])];
+      items = combined.map((i: any) => mapStreamingResult(i));
+    } else if (pId === 'crunchyroll') {
       const [tvData, netData] = await Promise.all([
         fetchEndpoint(`discover/tv?with_watch_providers=283&watch_region=US&with_genres=16&sort_by=popularity.desc`),
         fetchEndpoint(`discover/tv?with_networks=1112&with_genres=16&sort_by=popularity.desc`),
