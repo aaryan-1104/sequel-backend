@@ -15,6 +15,7 @@ import booksRouter from "./src/server/routes/books.js";
 import searchRouter from "./src/server/routes/search.js";
 import recommendationsRouter from "./src/server/routes/recommendations.js";
 import reviewsRouter from "./src/server/routes/reviews.js";
+import notificationsRouter from "./src/server/routes/notifications.js";
 
 dotenv.config();
 
@@ -118,6 +119,7 @@ app.use("/api", booksRouter);
 app.use("/api", aiRouter);
 app.use("/api", recommendationsRouter);
 app.use("/api", reviewsRouter);
+app.use("/api/notifications", notificationsRouter);
 
 // API 404 fallback handler to ensure /api/* requests return JSON
 app.all("/api/*", (req, res) => {

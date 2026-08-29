@@ -103,3 +103,18 @@ export const sessions = pgTable("sessions", {
 }, (table) => [
   index("idx_sessions_user").on(table.userId),
 ]);
+
+export const userPushSubscriptions = pgTable("user_push_subscriptions", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  type: text("type").notNull().default("web"), // 'web' | 'fcm' | 'apns'
+  endpoint: text("endpoint").notNull(),
+  p256dh: text("p256dh"),
+  auth: text("auth"),
+  deviceInfo: text("device_info"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+}, (table) => [
+  index("idx_push_user").on(table.userId),
+  index("idx_push_endpoint").on(table.endpoint),
+]);

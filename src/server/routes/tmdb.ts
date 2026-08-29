@@ -2486,4 +2486,131 @@ router.post("/tmdb-reviews", async (req, res) => {
   }
 });
 
+const STREAMING_CHART_CACHE = new Map<string, { timestamp: number; data: any }>();
+const STREAMING_CACHE_TTL = 1000 * 60 * 60 * 12; // 12 hours
+
+router.get("/tmdb-streaming", async (req, res) => {
+  const { platformId } = req.query;
+  
+  res.setHeader("Cache-Control", "public, s-maxage=43200, stale-while-revalidate=86400");
+  
+  const pId = String(platformId || 'netflix');
+  const cacheKey = `streaming-${pId}`;
+  if (STREAMING_CHART_CACHE.has(cacheKey)) {
+    const cached = STREAMING_CHART_CACHE.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < STREAMING_CACHE_TTL) {
+      return res.json(cached.data);
+    }
+  }
+
+  const rawKey = process.env.TMDB_API_KEY || '';
+  const tmdbKey = rawKey.replace(/^Bearer\s+/i, '').trim();
+  const isBearer = tmdbKey.length > 40;
+  const headers = {
+    accept: 'application/json',
+    ...(isBearer && { Authorization: `Bearer ${tmdbKey}` })
+  };
+
+  const fetchEndpoint = async (endpoint: string) => {
+    if (!tmdbKey) return { results: [] };
+    const separator = endpoint.includes('?') ? '&' : '?';
+    const url = `https://api.tmdb.org/3/${endpoint}${!isBearer ? `${separator}api_key=${tmdbKey}` : ''}`;
+    try {
+      const response = await fetch(url, { headers });
+      if (!response.ok) return { results: [] };
+      return await response.json();
+    } catch {
+      return { results: [] };
+    }
+  };
+
+  const mapStreamingResult = (item: any, defaultType?: 'movie' | 'tv') => {
+    const detectedType = item.media_type || defaultType || (item.first_air_date || item.name ? 'tv' : 'movie');
+    return {
+      id: `tmdb-${detectedType}-${item.id}`,
+      sourceId: String(item.id),
+      tmdbId: String(item.id),
+      title: item.title || item.name || item.original_name || "Unknown Title",
+      type: detectedType,
+      releaseDate: item.release_date || item.first_air_date || "",
+      releaseYear: (item.release_date || item.first_air_date || "").slice(0, 4),
+      synopsis: item.overview || "",
+      genres: (item.genre_ids || []).map((id: number) => TMDB_GENRES[id]).filter(Boolean),
+      coverUrl: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : "",
+      backdropUrl: item.backdrop_path ? `https://image.tmdb.org/t/p/w1280${item.backdrop_path}` : (item.poster_path ? `https://image.tmdb.org/t/p/w1280${item.poster_path}` : ""),
+      rating: item.vote_average || null,
+      voteAverage: item.vote_average || null,
+    };
+  };
+
+  try {
+    let items: any[] = [];
+    
+    if (pId === 'crunchyroll') {
+      const [tvData, netData] = await Promise.all([
+        fetchEndpoint(`discover/tv?with_watch_providers=283&watch_region=US&with_genres=16&sort_by=popularity.desc`),
+        fetchEndpoint(`discover/tv?with_networks=1112&with_genres=16&sort_by=popularity.desc`),
+      ]);
+      const combined = [...(tvData.results || []), ...(netData.results || [])];
+      items = combined.map((i: any) => mapStreamingResult(i, 'tv'));
+    } else if (pId === 'mubi') {
+      const [movieData, mubiCompany] = await Promise.all([
+        fetchEndpoint(`discover/movie?with_watch_providers=11&watch_region=US&sort_by=popularity.desc`),
+        fetchEndpoint(`discover/movie?with_companies=3798&sort_by=popularity.desc`),
+      ]);
+      const combined = [...(movieData.results || []), ...(mubiCompany.results || [])];
+      items = combined.map((i: any) => mapStreamingResult(i, 'movie'));
+    } else if (pId === 'apple_tv') {
+      const [tvData, movieData] = await Promise.all([
+        fetchEndpoint(`discover/tv?with_watch_providers=350&watch_region=US&sort_by=popularity.desc`),
+        fetchEndpoint(`discover/movie?with_watch_providers=350&watch_region=US&sort_by=popularity.desc`),
+      ]);
+      const combined = [...(tvData.results || []), ...(movieData.results || [])];
+      items = combined.map((i: any) => mapStreamingResult(i));
+    } else if (pId === 'disney') {
+      const [tvData, movieData] = await Promise.all([
+        fetchEndpoint(`discover/tv?with_watch_providers=337&watch_region=US&sort_by=popularity.desc`),
+        fetchEndpoint(`discover/movie?with_watch_providers=337&watch_region=US&sort_by=popularity.desc`),
+      ]);
+      const combined = [...(tvData.results || []), ...(movieData.results || [])];
+      items = combined.map((i: any) => mapStreamingResult(i));
+    } else if (pId === 'max') {
+      const [tvData, movieData] = await Promise.all([
+        fetchEndpoint(`discover/tv?with_watch_providers=1899&watch_region=US&sort_by=popularity.desc`),
+        fetchEndpoint(`discover/movie?with_watch_providers=1899&watch_region=US&sort_by=popularity.desc`),
+      ]);
+      const combined = [...(tvData.results || []), ...(movieData.results || [])];
+      items = combined.map((i: any) => mapStreamingResult(i));
+    } else if (pId === 'prime') {
+      const [tvData, movieData] = await Promise.all([
+        fetchEndpoint(`discover/tv?with_watch_providers=9&watch_region=US&sort_by=popularity.desc`),
+        fetchEndpoint(`discover/movie?with_watch_providers=9&watch_region=US&sort_by=popularity.desc`),
+      ]);
+      const combined = [...(tvData.results || []), ...(movieData.results || [])];
+      items = combined.map((i: any) => mapStreamingResult(i));
+    } else {
+      const [tvData, movieData] = await Promise.all([
+        fetchEndpoint(`discover/tv?with_watch_providers=8&watch_region=US&sort_by=popularity.desc`),
+        fetchEndpoint(`discover/movie?with_watch_providers=8&watch_region=US&sort_by=popularity.desc`),
+      ]);
+      const combined = [...(tvData.results || []), ...(movieData.results || [])];
+      items = combined.map((i: any) => mapStreamingResult(i));
+    }
+
+    const uniqueMap = new Map<string, any>();
+    for (const it of items) {
+      if (it.coverUrl && !uniqueMap.has(it.sourceId)) {
+        uniqueMap.set(it.sourceId, it);
+      }
+    }
+    const top10 = Array.from(uniqueMap.values()).slice(0, 10);
+    
+    STREAMING_CHART_CACHE.set(cacheKey, { timestamp: Date.now(), data: top10 });
+    return res.json(top10);
+  } catch (err: any) {
+    console.error("Streaming chart fetch error:", err);
+    return res.status(500).json({ error: "Failed to fetch streaming chart" });
+  }
+});
+
 export default router;
