@@ -1,6 +1,8 @@
 import express, { Router } from "express";
 import fs from "fs";
 import path from "path";
+import readline from "readline";
+import { Readable } from "stream";
 import { Type } from "@google/genai";
 import { getGeminiClient } from "../config/gemini.js";
 
@@ -2297,11 +2299,12 @@ const CATEGORY_CACHE = new Map<string, { timestamp: number, data: any }>();
 const CACHE_TTL = 1000 * 60 * 60; // 1 hour
 
 router.all("/tmdb-category", async (req, res) => {
-  const { category, page = 1 } = (req.body && Object.keys(req.body).length > 0) ? req.body : req.query;
+  const { category, page = 1, region = 'GLOBAL' } = (req.body && Object.keys(req.body).length > 0) ? req.body : req.query;
+  const targetRegion = String(region).toUpperCase() === 'IN' ? 'IN' : 'GLOBAL';
   
   res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
   
-  const cacheKey = `${category}-${page}`;
+  const cacheKey = `${category}-${page}-${targetRegion}`;
   if (CATEGORY_CACHE.has(cacheKey)) {
     const cached = CATEGORY_CACHE.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
@@ -2313,7 +2316,6 @@ router.all("/tmdb-category", async (req, res) => {
 
   const mapItem = (item: any, defaultType?: 'movie' | 'tv') => {
     const detectedType = item.media_type || defaultType || (item.first_air_date || item.name ? 'tv' : 'movie');
-    const isTV = detectedType === 'tv';
     return {
       id: `tmdb-${item.id}`,
       title: item.title || item.name || item.original_name || "Unknown Title",
@@ -2329,7 +2331,8 @@ router.all("/tmdb-category", async (req, res) => {
 
   const fetchTMDB = async (endpoint: string) => {
     if (!tmdbKey) return { results: [] };
-    const response = await fetch(`https://api.tmdb.org/3/${endpoint}&api_key=${tmdbKey}`);
+    const separator = endpoint.includes('?') ? '&' : '?';
+    const response = await fetch(`https://api.tmdb.org/3/${endpoint}${separator}api_key=${tmdbKey}`);
     if (!response.ok) throw new Error("TMDB Error");
     return response.json();
   };
@@ -2370,17 +2373,18 @@ router.all("/tmdb-category", async (req, res) => {
   try {
     let data;
     let results;
+    const regionParam = targetRegion === 'IN' ? '&region=IN' : '';
     switch (category) {
       case 'trendingMovies':
-        data = await fetchTMDB(`trending/movie/week?page=${page}`);
+        data = await fetchTMDB(`trending/movie/week?page=${page}${regionParam}`);
         results = data.results.map((i: any) => mapItem(i, 'movie'));
         break;
       case 'nowPlayingMovies':
-        data = await fetchTMDB(`movie/now_playing?page=${page}`);
+        data = await fetchTMDB(`movie/now_playing?page=${page}${regionParam}`);
         results = data.results.map((i: any) => mapItem(i, 'movie'));
         break;
       case 'topRatedMovies':
-        data = await fetchTMDB(`movie/top_rated?page=${page}`);
+        data = await fetchTMDB(`movie/top_rated?page=${page}${regionParam}`);
         results = data.results.map((i: any) => mapItem(i, 'movie'));
         break;
       case 'upcomingMovies':
@@ -2392,11 +2396,11 @@ router.all("/tmdb-category", async (req, res) => {
             return relDate.trim().slice(0, 10) >= todayISO;
           };
 
-          const upcomingData = await fetchTMDB(`movie/upcoming?primary_release_date.gte=${todayISO}&page=${page}`);
+          const upcomingData = await fetchTMDB(`movie/upcoming?primary_release_date.gte=${todayISO}&page=${page}${regionParam}`);
           let itemsList = (upcomingData.results || []).map((i: any) => mapItem(i, 'movie')).filter(isUpcoming);
 
           if (itemsList.length < 10) {
-            const discoverData = await fetchTMDB(`discover/movie?primary_release_date.gte=${todayISO}&sort_by=popularity.desc&page=${page}`);
+            const discoverData = await fetchTMDB(`discover/movie?primary_release_date.gte=${todayISO}&sort_by=popularity.desc&page=${page}${regionParam}`);
             const existingIds = new Set(itemsList.map((i: any) => i.id));
             const additional = (discoverData.results || [])
               .map((i: any) => mapItem(i, 'movie'))
@@ -2486,16 +2490,17 @@ router.post("/tmdb-reviews", async (req, res) => {
   }
 });
 
-const STREAMING_CHART_CACHE = new Map<string, { timestamp: number; data: any }>();
+const STREAMING_CHART_CACHE = new Map<string, { timestamp: number, data: any[] }>();
 const STREAMING_CACHE_TTL = 1000 * 60 * 60 * 12; // 12 hours
 
 router.get("/tmdb-streaming", async (req, res) => {
-  const { platformId } = req.query;
+  const { platformId, region = 'GLOBAL' } = req.query;
+  const targetRegion = String(region).toUpperCase() === 'IN' ? 'IN' : 'GLOBAL';
   
   res.setHeader("Cache-Control", "public, s-maxage=43200, stale-while-revalidate=86400");
   
   const pId = String(platformId || 'netflix');
-  const cacheKey = `streaming-${pId}`;
+  const cacheKey = `streaming-${pId}-${targetRegion}`;
   if (STREAMING_CHART_CACHE.has(cacheKey)) {
     const cached = STREAMING_CHART_CACHE.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < STREAMING_CACHE_TTL) {
@@ -2545,36 +2550,111 @@ router.get("/tmdb-streaming", async (req, res) => {
 
   try {
     let items: any[] = [];
+    const regionParam = targetRegion === 'IN' ? '&watch_region=IN' : '&watch_region=US';
     
-    if (pId === 'netflix' || pId === 'netflix_movies') {
-      try {
-        const tudumRes = await fetch('https://www.netflix.com/tudum/top10/data/all-weeks-global.tsv');
-        if (tudumRes.ok) {
-          const tsv = await tudumRes.text();
-          const lines = tsv.trim().split('\n');
-          if (lines.length > 1) {
-            const firstRow = lines[1].split('\t');
-            const latestWeek = firstRow[0];
-            const targetCategory = pId === 'netflix_movies' ? 'Films (English)' : 'TV (English)';
+    if (pId === 'netflix' || pId === 'netflix_non_english_shows' || pId === 'netflix_movies' || pId === 'netflix_non_english_movies') {
+      if (targetRegion === 'GLOBAL') {
+        try {
+          const tudumRes = await fetch('https://www.netflix.com/tudum/top10/data/all-weeks-global.tsv');
+          if (tudumRes.ok) {
+            const tsv = await tudumRes.text();
+            const lines = tsv.trim().split('\n');
+            if (lines.length > 1) {
+              const firstRow = lines[1].split('\t');
+              const latestWeek = firstRow[0];
+              let targetCategory = 'TV (English)';
+              if (pId === 'netflix_non_english_shows') targetCategory = 'TV (Non-English)';
+              else if (pId === 'netflix_movies') targetCategory = 'Films (English)';
+              else if (pId === 'netflix_non_english_movies') targetCategory = 'Films (Non-English)';
+
+              const tudumRows: any[] = [];
+              for (let i = 1; i < lines.length; i++) {
+                const row = lines[i].split('\t');
+                if (row[0] !== latestWeek) break;
+                if (row[1] === targetCategory) {
+                  tudumRows.push({
+                    rank: parseInt(row[2], 10),
+                    title: row[3],
+                    seasonTitle: row[4],
+                    views: parseInt(row[7], 10),
+                  });
+                }
+              }
+
+              if (tudumRows.length > 0) {
+                const isMovie = pId === 'netflix_movies' || pId === 'netflix_non_english_movies';
+                const defaultSearchType = isMovie ? 'movie' : 'tv';
+                const altSearchType = isMovie ? 'tv' : 'movie';
+                const searchResults = await Promise.all(
+                  tudumRows.map(async (t) => {
+                    let search = await fetchEndpoint(`search/${defaultSearchType}?query=${encodeURIComponent(t.title)}`);
+                    if (!search.results || search.results.length === 0) {
+                      search = await fetchEndpoint(`search/${altSearchType}?query=${encodeURIComponent(t.title)}`);
+                    }
+                    const match = search.results?.[0];
+                    if (match) {
+                      const mapped = mapStreamingResult(match, match.first_air_date ? 'tv' : 'movie');
+                      return {
+                        ...mapped,
+                        rank: t.rank,
+                        views: t.views,
+                        seasonTitle: t.seasonTitle,
+                      };
+                    }
+                    return null;
+                  })
+                );
+
+                const valid = searchResults.filter(Boolean);
+                if (valid.length > 0) {
+                  STREAMING_CHART_CACHE.set(cacheKey, { timestamp: Date.now(), data: valid.slice(0, 10) });
+                  return res.json(valid.slice(0, 10));
+                }
+              }
+            }
+          }
+        } catch (tudumErr) {
+          console.warn('Tudum global fetch error, falling back to discover:', tudumErr);
+        }
+      } else if (targetRegion === 'IN') {
+        try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 12000);
+          const tudumCountryRes = await fetch('https://www.netflix.com/tudum/top10/data/all-weeks-countries.tsv', { signal: controller.signal }).finally(() => clearTimeout(timeout));
+          if (tudumCountryRes.ok && tudumCountryRes.body) {
+            const rl = readline.createInterface({
+              input: Readable.fromWeb(tudumCountryRes.body as any),
+              crlfDelay: Infinity
+            });
+
+            const isMovie = pId === 'netflix_movies' || pId === 'netflix_non_english_movies';
+            const targetCategory = isMovie ? 'Films' : 'TV';
             const tudumRows: any[] = [];
-            for (let i = 1; i < lines.length; i++) {
-              const row = lines[i].split('\t');
-              if (row[0] !== latestWeek) break;
-              if (row[1] === targetCategory) {
+            let indiaWeek: string | null = null;
+
+            for await (const line of rl) {
+              if (!line.startsWith('India\t')) continue;
+              const cols = line.split('\t');
+              if (!indiaWeek) indiaWeek = cols[2];
+              if (cols[2] !== indiaWeek) {
+                rl.close();
+                break;
+              }
+
+              if (cols[3] === targetCategory) {
                 tudumRows.push({
-                  rank: parseInt(row[2], 10),
-                  title: row[3],
-                  seasonTitle: row[4],
-                  views: parseInt(row[7], 10),
+                  rank: parseInt(cols[4], 10),
+                  title: cols[5],
+                  seasonTitle: cols[6] === 'N/A' ? '' : cols[6],
                 });
               }
             }
 
             if (tudumRows.length > 0) {
-              const defaultSearchType = pId === 'netflix_movies' ? 'movie' : 'tv';
-              const altSearchType = pId === 'netflix_movies' ? 'tv' : 'movie';
+              const defaultSearchType = isMovie ? 'movie' : 'tv';
+              const altSearchType = isMovie ? 'tv' : 'movie';
               const searchResults = await Promise.all(
-                tudumRows.map(async (t) => {
+                tudumRows.slice(0, 10).map(async (t) => {
                   let search = await fetchEndpoint(`search/${defaultSearchType}?query=${encodeURIComponent(t.title)}`);
                   if (!search.results || search.results.length === 0) {
                     search = await fetchEndpoint(`search/${altSearchType}?query=${encodeURIComponent(t.title)}`);
@@ -2585,7 +2665,6 @@ router.get("/tmdb-streaming", async (req, res) => {
                     return {
                       ...mapped,
                       rank: t.rank,
-                      views: t.views,
                       seasonTitle: t.seasonTitle,
                     };
                   }
@@ -2600,63 +2679,70 @@ router.get("/tmdb-streaming", async (req, res) => {
               }
             }
           }
+        } catch (tudumCountryErr) {
+          console.warn('Tudum India country fetch error, falling back to discover:', tudumCountryErr);
         }
-      } catch (tudumErr) {
-        console.warn('Tudum fetch error, falling back to discover:', tudumErr);
       }
 
+      const isMovie = pId === 'netflix_movies' || pId === 'netflix_non_english_movies';
       const [tvData, movieData] = await Promise.all([
-        fetchEndpoint(`discover/tv?with_watch_providers=8&watch_region=US&sort_by=popularity.desc`),
-        fetchEndpoint(`discover/movie?with_watch_providers=8&watch_region=US&sort_by=popularity.desc`),
+        fetchEndpoint(`discover/tv?with_watch_providers=8${regionParam}&sort_by=popularity.desc`),
+        fetchEndpoint(`discover/movie?with_watch_providers=8${regionParam}&sort_by=popularity.desc`),
       ]);
-      const combined = pId === 'netflix_movies' ? (movieData.results || []) : [...(tvData.results || []), ...(movieData.results || [])];
+      const combined = isMovie ? (movieData.results || []) : (tvData.results || []);
       items = combined.map((i: any) => mapStreamingResult(i));
     } else if (pId === 'crunchyroll') {
       const [tvData, netData] = await Promise.all([
-        fetchEndpoint(`discover/tv?with_watch_providers=283&watch_region=US&with_genres=16&sort_by=popularity.desc`),
+        fetchEndpoint(`discover/tv?with_watch_providers=283${regionParam}&with_genres=16&sort_by=popularity.desc`),
         fetchEndpoint(`discover/tv?with_networks=1112&with_genres=16&sort_by=popularity.desc`),
       ]);
       const combined = [...(tvData.results || []), ...(netData.results || [])];
       items = combined.map((i: any) => mapStreamingResult(i, 'tv'));
     } else if (pId === 'mubi') {
       const [movieData, mubiCompany] = await Promise.all([
-        fetchEndpoint(`discover/movie?with_watch_providers=11&watch_region=US&sort_by=popularity.desc`),
+        fetchEndpoint(`discover/movie?with_watch_providers=11${regionParam}&sort_by=popularity.desc`),
         fetchEndpoint(`discover/movie?with_companies=3798&sort_by=popularity.desc`),
       ]);
       const combined = [...(movieData.results || []), ...(mubiCompany.results || [])];
       items = combined.map((i: any) => mapStreamingResult(i, 'movie'));
-    } else if (pId === 'apple_tv') {
-      const [tvData, movieData] = await Promise.all([
-        fetchEndpoint(`discover/tv?with_watch_providers=350&watch_region=US&sort_by=popularity.desc`),
-        fetchEndpoint(`discover/movie?with_watch_providers=350&watch_region=US&sort_by=popularity.desc`),
-      ]);
-      const combined = [...(tvData.results || []), ...(movieData.results || [])];
-      items = combined.map((i: any) => mapStreamingResult(i));
-    } else if (pId === 'disney') {
-      const [tvData, movieData] = await Promise.all([
-        fetchEndpoint(`discover/tv?with_watch_providers=337&watch_region=US&sort_by=popularity.desc`),
-        fetchEndpoint(`discover/movie?with_watch_providers=337&watch_region=US&sort_by=popularity.desc`),
-      ]);
-      const combined = [...(tvData.results || []), ...(movieData.results || [])];
-      items = combined.map((i: any) => mapStreamingResult(i));
-    } else if (pId === 'max') {
-      const [tvData, movieData] = await Promise.all([
-        fetchEndpoint(`discover/tv?with_watch_providers=1899&watch_region=US&sort_by=popularity.desc`),
-        fetchEndpoint(`discover/movie?with_watch_providers=1899&watch_region=US&sort_by=popularity.desc`),
-      ]);
-      const combined = [...(tvData.results || []), ...(movieData.results || [])];
-      items = combined.map((i: any) => mapStreamingResult(i));
-    } else if (pId === 'prime') {
-      const [tvData, movieData] = await Promise.all([
-        fetchEndpoint(`discover/tv?with_watch_providers=9&watch_region=US&sort_by=popularity.desc`),
-        fetchEndpoint(`discover/movie?with_watch_providers=9&watch_region=US&sort_by=popularity.desc`),
-      ]);
-      const combined = [...(tvData.results || []), ...(movieData.results || [])];
-      items = combined.map((i: any) => mapStreamingResult(i));
+    } else if (pId === 'apple_tv' || pId === 'apple_tv_movies') {
+      const isMovie = pId === 'apple_tv_movies';
+      const endpoint = isMovie
+        ? `discover/movie?with_watch_providers=350${regionParam}&sort_by=popularity.desc`
+        : `discover/tv?with_watch_providers=350${regionParam}&sort_by=popularity.desc`;
+      const data = await fetchEndpoint(endpoint);
+      items = (data.results || []).map((i: any) => mapStreamingResult(i, isMovie ? 'movie' : 'tv'));
+    } else if (pId === 'disney' || pId === 'disney_movies') {
+      // For India: Disney+ Hotstar is provider 122,337; For Global: Disney+ is provider 337
+      const isMovie = pId === 'disney_movies';
+      const providerStr = targetRegion === 'IN' ? '122|337' : '337';
+      const endpoint = isMovie
+        ? `discover/movie?with_watch_providers=${providerStr}${regionParam}&sort_by=popularity.desc`
+        : `discover/tv?with_watch_providers=${providerStr}${regionParam}&sort_by=popularity.desc`;
+      const data = await fetchEndpoint(endpoint);
+      items = (data.results || []).map((i: any) => mapStreamingResult(i, isMovie ? 'movie' : 'tv'));
+    } else if (pId === 'max' || pId === 'max_movies') {
+      // For India: JioCinema / Max content is provider 232|1899; For Global: Max is provider 1899
+      const isMovie = pId === 'max_movies';
+      const providerStr = targetRegion === 'IN' ? '232|1899' : '1899';
+      const endpoint = isMovie
+        ? `discover/movie?with_watch_providers=${providerStr}${regionParam}&sort_by=popularity.desc`
+        : `discover/tv?with_watch_providers=${providerStr}${regionParam}&sort_by=popularity.desc`;
+      const data = await fetchEndpoint(endpoint);
+      items = (data.results || []).map((i: any) => mapStreamingResult(i, isMovie ? 'movie' : 'tv'));
+    } else if (pId === 'prime' || pId === 'prime_movies') {
+      // For India: Prime Video is provider 119|9; For Global: Prime Video is provider 9
+      const isMovie = pId === 'prime_movies';
+      const providerStr = targetRegion === 'IN' ? '119|9' : '9';
+      const endpoint = isMovie
+        ? `discover/movie?with_watch_providers=${providerStr}${regionParam}&sort_by=popularity.desc`
+        : `discover/tv?with_watch_providers=${providerStr}${regionParam}&sort_by=popularity.desc`;
+      const data = await fetchEndpoint(endpoint);
+      items = (data.results || []).map((i: any) => mapStreamingResult(i, isMovie ? 'movie' : 'tv'));
     } else {
       const [tvData, movieData] = await Promise.all([
-        fetchEndpoint(`discover/tv?with_watch_providers=8&watch_region=US&sort_by=popularity.desc`),
-        fetchEndpoint(`discover/movie?with_watch_providers=8&watch_region=US&sort_by=popularity.desc`),
+        fetchEndpoint(`discover/tv?with_watch_providers=8${regionParam}&sort_by=popularity.desc`),
+        fetchEndpoint(`discover/movie?with_watch_providers=8${regionParam}&sort_by=popularity.desc`),
       ]);
       const combined = [...(tvData.results || []), ...(movieData.results || [])];
       items = combined.map((i: any) => mapStreamingResult(i));
