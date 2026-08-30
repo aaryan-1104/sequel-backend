@@ -106,7 +106,7 @@ export const sessions = pgTable("sessions", {
 
 export const userPushSubscriptions = pgTable("user_push_subscriptions", {
   id: text("id").primaryKey(),
-  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull(),
   type: text("type").notNull().default("web"), // 'web' | 'fcm' | 'apns'
   endpoint: text("endpoint").notNull(),
   p256dh: text("p256dh"),

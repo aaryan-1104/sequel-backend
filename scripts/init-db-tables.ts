@@ -146,6 +146,24 @@ async function initDb() {
     `);
     console.log("✓ sessions table ready");
 
+    // 7. Push Subscriptions Table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS user_push_subscriptions (
+        id STRING PRIMARY KEY,
+        user_id STRING NOT NULL,
+        type STRING NOT NULL DEFAULT 'web',
+        endpoint STRING NOT NULL,
+        p256dh STRING,
+        auth STRING,
+        device_info STRING,
+        created_at STRING NOT NULL,
+        updated_at STRING NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_push_user ON user_push_subscriptions(user_id);
+      CREATE INDEX IF NOT EXISTS idx_push_endpoint ON user_push_subscriptions(endpoint);
+    `);
+    console.log("✓ user_push_subscriptions table ready");
+
     console.log("\n=======================================================");
     console.log("🎉 ALL COCKROACHDB TABLES & INDEXES INITIALIZED CLEANLY!");
     console.log("=======================================================");
