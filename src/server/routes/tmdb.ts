@@ -657,7 +657,8 @@ router.all("/tmdb-details", async (req, res) => {
       const totalSeasons = tmdbData.number_of_seasons || seasonsList.length || 1;
 
       if (tmdbType === 'tv') {
-        const isCompleted = userStatus === 'completed' || (totalEps > 0 && userProgress >= totalEps);
+        const isNotStarted = userStatus === 'planned' || userStatus === 'backlog' || userStatus === 'want_to_watch' || userStatus === 'watchlist' || (userProgress === 0 && userStatus !== 'completed' && userStatus !== 'in-progress');
+        const isCompleted = !isNotStarted && (userStatus === 'completed' || (totalEps > 0 && userProgress >= totalEps));
         const watchedMap: Record<string, boolean> = {};
 
         if (isCompleted) {
@@ -680,30 +681,7 @@ router.all("/tmdb-details", async (req, res) => {
             watchedEpisodes: watchedMap,
             nextEpisodeAirDate: tmdbData.next_episode_to_air?.air_date || null,
           };
-        } else if (reqSeason > 0 && reqEpisode > 0) {
-          computedStatus = 'in-progress';
-          for (const s of seasonsList) {
-            const epCount = s.episode_count || 0;
-            if (s.season_number < reqSeason) {
-              for (let e = 1; e <= epCount; e++) {
-                watchedMap[`S${s.season_number}E${e}`] = true;
-              }
-            } else if (s.season_number === reqSeason) {
-              for (let e = 1; e <= Math.min(reqEpisode, epCount); e++) {
-                watchedMap[`S${s.season_number}E${e}`] = true;
-              }
-            }
-          }
-          computedTvSpecifics = {
-            currentSeason: reqSeason,
-            currentEpisode: reqEpisode,
-            totalSeasons,
-            totalEpisodes: totalEps,
-            episodesPerSeason: epsMap,
-            watchedEpisodes: watchedMap,
-            nextEpisodeAirDate: tmdbData.next_episode_to_air?.air_date || null,
-          };
-        } else if (userProgress > 0) {
+        } else if (!isNotStarted && userProgress > 0) {
           computedStatus = 'in-progress';
           let remaining = userProgress;
           let currentSeason = 1;
@@ -751,8 +729,8 @@ router.all("/tmdb-details", async (req, res) => {
           };
         } else {
           computedTvSpecifics = {
-            currentSeason: 1,
-            currentEpisode: 1,
+            currentSeason: reqSeason > 0 ? reqSeason : 1,
+            currentEpisode: reqEpisode > 0 ? reqEpisode : 1,
             totalSeasons,
             totalEpisodes: totalEps,
             episodesPerSeason: epsMap,

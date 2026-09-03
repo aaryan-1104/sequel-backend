@@ -2,7 +2,7 @@ import { adminDb } from "../config/firebase.js";
 import { verifyJwtToken } from "../utils/jwt.js";
 import { db, pool, isDatabaseConfigured } from "../db/index.js";
 import { users, mediaItems, diaryEntries, customLists, userSettings, sessions } from "../db/schema.js";
-import { eq, or, sql, and } from "drizzle-orm";
+import { eq, or, sql, and, ne } from "drizzle-orm";
 
 export interface DbUser {
   id: string;
@@ -344,7 +344,12 @@ export async function getUserData(userId: string) {
   if (isDatabaseConfigured() && db) {
     try {
       const [items, diary, lists, settingsRows] = await Promise.all([
-        db.select().from(mediaItems).where(eq(mediaItems.userId, userId)),
+        db.select().from(mediaItems).where(
+          and(
+            eq(mediaItems.userId, userId),
+            ne(mediaItems.status, "deleted")
+          )
+        ),
         db.select().from(diaryEntries).where(eq(diaryEntries.userId, userId)),
         db.select().from(customLists).where(eq(customLists.userId, userId)),
         db.select().from(userSettings).where(eq(userSettings.userId, userId)).limit(1)
@@ -532,18 +537,24 @@ export async function deleteUserItem(userId: string, itemId: string | number) {
 
   if (isDatabaseConfigured() && db) {
     try {
-      await db.delete(mediaItems).where(
+      await db.update(mediaItems).set({
+        status: "deleted",
+        lastUpdatedAt: new Date().toISOString()
+      }).where(
         and(eq(mediaItems.userId, userId), eq(mediaItems.id, String(itemId)))
       );
       return;
     } catch (err: any) {
-      console.error("PostgreSQL error (deleteUserItem):", err.message);
+      console.error("PostgreSQL error (deleteUserItem soft-delete):", err.message);
     }
   }
 
   if (adminDb) {
     try {
-      await adminDb.collection("users").doc(userId).collection("items").doc(String(itemId)).delete();
+      await adminDb.collection("users").doc(userId).collection("items").doc(String(itemId)).set({
+        status: "deleted",
+        lastUpdatedAt: new Date().toISOString()
+      }, { merge: true });
     } catch (err: any) {
       console.error("Firestore error (deleteUserItem):", err.message);
     }
@@ -642,6 +653,8 @@ export async function saveUserCustomLists(userId: string, lists: any[]) {
           tmdbListId: list.tmdbListId ? String(list.tmdbListId) : null,
           coverImage: list.coverImage || null,
           itemIds: Array.isArray(list.itemIds) ? list.itemIds : [],
+          isDeleted: false,
+          deletedAt: null,
           createdAt: list.createdAt || new Date().toISOString(),
           updatedAt: list.updatedAt || new Date().toISOString()
         }).onConflictDoUpdate({
@@ -653,15 +666,26 @@ export async function saveUserCustomLists(userId: string, lists: any[]) {
             tmdbListId: list.tmdbListId ? String(list.tmdbListId) : null,
             coverImage: list.coverImage || null,
             itemIds: Array.isArray(list.itemIds) ? list.itemIds : [],
+            isDeleted: false,
+            deletedAt: null,
             updatedAt: new Date().toISOString()
           }
         });
       }
 
-      const existingLists = await db.select({ id: customLists.id }).from(customLists).where(eq(customLists.userId, userId));
+      const existingLists = await db.select({ id: customLists.id }).from(customLists).where(
+        and(
+          eq(customLists.userId, userId),
+          or(eq(customLists.isDeleted, false), isNull(customLists.isDeleted))
+        )
+      );
       for (const el of existingLists) {
         if (!activeIds.has(el.id)) {
-          await db.delete(customLists).where(and(eq(customLists.userId, userId), eq(customLists.id, el.id)));
+          await db.update(customLists).set({
+            isDeleted: true,
+            deletedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          }).where(and(eq(customLists.userId, userId), eq(customLists.id, el.id)));
         }
       }
       return;
@@ -675,6 +699,37 @@ export async function saveUserCustomLists(userId: string, lists: any[]) {
       await adminDb.collection("user_data").doc(userId).set({ customLists: lists }, { merge: true });
     } catch (err: any) {
       console.error("Firestore error (saveUserCustomLists):", err.message);
+    }
+  }
+}
+
+export async function deleteUserCustomList(userId: string, listId: string) {
+  if (!listId) return;
+  userDataCache.delete(userId);
+
+  if (isDatabaseConfigured() && db) {
+    try {
+      await db.update(customLists).set({
+        isDeleted: true,
+        deletedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }).where(
+        and(eq(customLists.userId, userId), eq(customLists.id, listId))
+      );
+      return;
+    } catch (err: any) {
+      console.error("PostgreSQL error (deleteUserCustomList soft-delete):", err.message);
+    }
+  }
+
+  if (adminDb) {
+    try {
+      await adminDb.collection("users").doc(userId).collection("lists").doc(listId).set({
+        isDeleted: true,
+        deletedAt: new Date().toISOString()
+      }, { merge: true });
+    } catch (err: any) {
+      console.error("Firestore error (deleteUserCustomList):", err.message);
     }
   }
 }

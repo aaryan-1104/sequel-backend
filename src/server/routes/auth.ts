@@ -13,6 +13,7 @@ import {
   mergeUserData,
   saveUserData,
   saveUserCustomLists,
+  deleteUserCustomList,
   saveUserSettingsAndCollections,
   saveUserItem,
   deleteUserItem,
@@ -595,6 +596,22 @@ router.post("/sync-lists", async (req, res) => {
   }
 
   await saveUserCustomLists(userId, customLists);
+  return res.json({ success: true });
+});
+
+// ATOMIC CUSTOM LIST DELETE
+router.post("/sync-list-delete", async (req, res) => {
+  const { token, listId } = req.body;
+  if (!token || !listId) {
+    return res.status(400).json({ error: "Invalid payload. Token and listId are required." });
+  }
+
+  const userId = await getUserIdByToken(token);
+  if (!userId) {
+    return res.status(401).json({ error: "Invalid session." });
+  }
+
+  await deleteUserCustomList(userId, String(listId));
   return res.json({ success: true });
 });
 
