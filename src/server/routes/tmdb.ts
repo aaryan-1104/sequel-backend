@@ -6,7 +6,7 @@ import { Readable } from "stream";
 import { Type } from "@google/genai";
 import { getGeminiClient } from "../config/gemini.js";
 
-import { findUserByUsernameOrEmail, getUserIdByToken } from "../services/db.js";
+import { findUserByUsernameOrEmail, getUserIdByToken, selectBestTmdbMatch } from "../services/db.js";
 
 const router = Router();
 
@@ -531,18 +531,7 @@ router.post("/tmdb-refresh", async (req, res) => {
       const results = tmdbData.results || [];
       console.log(`[TMDB Refresh] Received ${results.length} results`);
 
-      let matchedResult = results[0];
-
-      // If multiple candidates exist for a movie and year/runtime is provided
-      if (results.length > 1 && releaseYear) {
-        const exactYearMatch = results.find((r: any) => {
-          const itemDate = r.release_date || r.first_air_date || '';
-          return itemDate.startsWith(String(releaseYear));
-        });
-        if (exactYearMatch) {
-          matchedResult = exactYearMatch;
-        }
-      }
+      const matchedResult = selectBestTmdbMatch(results, title || '', releaseYear);
 
       if (matchedResult) {
         const refreshData = {

@@ -42,6 +42,66 @@ const TMDB_GENRES: Record<number, string> = {
   10767: "Talk", 10768: "War & Politics"
 };
 
+export function selectBestTmdbMatch(results: any[], targetTitle: string, targetYear?: string | number): any {
+  if (!results || results.length === 0) return null;
+  if (results.length === 1) return results[0];
+
+  const cleanTarget = (targetTitle || '').toLowerCase().trim();
+  const canonicalTarget = cleanTarget.replace(/^(the|a|an)\s+/i, '').trim();
+  const cleanYearStr = targetYear ? String(targetYear).trim() : '';
+
+  let bestMatch = results[0];
+  let bestScore = -1;
+
+  for (const r of results) {
+    let score = 0;
+    const title = (r.title || r.name || '').toLowerCase().trim();
+    const originalTitle = (r.original_title || r.original_name || '').toLowerCase().trim();
+    const canonicalTitle = title.replace(/^(the|a|an)\s+/i, '').trim();
+    const canonicalOriginalTitle = originalTitle.replace(/^(the|a|an)\s+/i, '').trim();
+
+    // 1. Exact Title Match (highest priority: +100 points)
+    if (title === cleanTarget || originalTitle === cleanTarget) {
+      score += 100;
+    } else if (canonicalTitle === canonicalTarget || canonicalOriginalTitle === canonicalTarget) {
+      score += 80;
+    } else if (title.startsWith(cleanTarget + ':') || title.startsWith(cleanTarget + ' -')) {
+      score += 40;
+    } else if (cleanTarget.length >= 4 && (title.includes(cleanTarget) || originalTitle.includes(cleanTarget))) {
+      score += 20;
+    }
+
+    // 2. Year Matching
+    const candidateDate = String(r.release_date || r.first_air_date || '').slice(0, 4);
+    if (cleanYearStr && candidateDate) {
+      if (candidateDate === cleanYearStr) {
+        score += 60;
+      } else if (Math.abs(parseInt(candidateDate, 10) - parseInt(cleanYearStr, 10)) === 1) {
+        score += 25;
+      } else {
+        score -= 20;
+      }
+    }
+
+    // 3. Popularity & Vote count tie-breaker (favors mainstream official productions)
+    const voteCount = typeof r.vote_count === 'number' ? r.vote_count : 0;
+    if (voteCount > 0) {
+      score += Math.min(Math.log10(voteCount + 1) * 6, 25);
+    }
+    const popularity = typeof r.popularity === 'number' ? r.popularity : 0;
+    if (popularity > 0) {
+      score += Math.min(Math.log10(popularity + 1) * 3, 15);
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestMatch = r;
+    }
+  }
+
+  return bestMatch;
+}
+
 export async function enrichItemFromTmdb(item: any): Promise<any> {
   if (!item || (item.type !== 'tv' && item.type !== 'movie')) return item;
   if (item.tmdbId && item.poster && item.backdrop) return item;
@@ -58,8 +118,23 @@ export async function enrichItemFromTmdb(item: any): Promise<any> {
   const tmdbType = item.type === 'movie' ? 'movie' : 'tv';
   let match: any = null;
 
-  // 1. Try TVDB ID resolution
-  if (item.tvdbId) {
+  // 1. Try IMDb ID resolution (highest precision, e.g. from IMDb CSV exports)
+  if (item.imdbId) {
+    const cleanImdbId = String(item.imdbId).trim();
+    if (/^tt\d+$/i.test(cleanImdbId)) {
+      try {
+        const findUrl = `https://api.tmdb.org/3/find/${cleanImdbId}?external_source=imdb_id&language=en-US${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
+        const res = await fetch(findUrl, { headers, signal: AbortSignal.timeout(6000) });
+        if (res.ok) {
+          const data = await res.json();
+          match = (tmdbType === 'movie' ? data.movie_results?.[0] : data.tv_results?.[0]) || data.movie_results?.[0] || data.tv_results?.[0];
+        }
+      } catch (e) {}
+    }
+  }
+
+  // 2. Try TVDB ID resolution (e.g. from TV Time GDPR show exports)
+  if (!match && item.tvdbId) {
     const cleanTvdbId = String(item.tvdbId).replace(/\D/g, '');
     if (cleanTvdbId) {
       try {
@@ -73,15 +148,29 @@ export async function enrichItemFromTmdb(item: any): Promise<any> {
     }
   }
 
-  // 2. Try Title Search fallback
+  // 3. Disambiguated Title + Release Year Search
   if (!match && item.title) {
     try {
-      const cleanTitle = (item.title || '').replace(/\s*\(\d{4}\)$/, '').trim();
-      const searchUrl = `https://api.tmdb.org/3/search/${tmdbType}?query=${encodeURIComponent(cleanTitle)}&language=en-US&page=1${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
+      let year = String(item.releaseYear || '').trim();
+      if (!year && item.releaseDate && /^\d{4}/.test(String(item.releaseDate))) {
+        year = String(item.releaseDate).slice(0, 4);
+      }
+      let cleanTitle = (item.title || '').trim();
+      const titleYearMatch = cleanTitle.match(/\s*\((\d{4})\)$/);
+      if (titleYearMatch) {
+        if (!year) year = titleYearMatch[1];
+        cleanTitle = cleanTitle.replace(/\s*\((\d{4})\)$/, '').trim();
+      }
+
+      const yearParam = year ? (tmdbType === 'movie' ? `&primary_release_year=${year}` : `&first_air_date_year=${year}`) : '';
+      const searchUrl = `https://api.tmdb.org/3/search/${tmdbType}?query=${encodeURIComponent(cleanTitle)}&language=en-US&page=1&include_adult=false${yearParam}${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
       const res = await fetch(searchUrl, { headers, signal: AbortSignal.timeout(6000) });
       if (res.ok) {
         const data = await res.json();
-        match = data.results?.[0];
+        const results = data.results || [];
+        if (results.length > 0) {
+          match = selectBestTmdbMatch(results, cleanTitle, year);
+        }
       }
     } catch (e) {}
   }
@@ -91,10 +180,14 @@ export async function enrichItemFromTmdb(item: any): Promise<any> {
       ? match.genre_ids.map((gid: number) => TMDB_GENRES[gid]).filter(Boolean)
       : [];
 
+    const existingCover = String(item.poster || item.coverUrl || '').trim();
+    const isPlaceholder = !existingCover || existingCover.includes('unsplash.com') || existingCover.startsWith('linear-gradient');
+    const posterUrl = !isPlaceholder ? existingCover : (match.poster_path ? `https://image.tmdb.org/t/p/w500${match.poster_path}` : null);
+
     return {
       ...item,
       tmdbId: `tmdb-${match.id}`,
-      poster: item.poster || item.coverUrl || (match.poster_path ? `https://image.tmdb.org/t/p/w500${match.poster_path}` : null),
+      poster: posterUrl,
       backdrop: item.backdrop || (match.backdrop_path ? `https://image.tmdb.org/t/p/w1280${match.backdrop_path}` : null),
       releaseDate: item.releaseDate || match.first_air_date || match.release_date || null,
       genres: (item.genres && item.genres.length > 0) ? item.genres : genreNames,
