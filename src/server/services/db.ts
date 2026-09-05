@@ -436,7 +436,7 @@ export async function getUserData(userId: string) {
 
   if (isDatabaseConfigured() && db) {
     try {
-      const [items, diary, lists, settingsRows] = await Promise.all([
+      const [itemsRes, diaryRes, listsRes, settingsRes] = await Promise.allSettled([
         db.select().from(mediaItems).where(
           and(
             eq(mediaItems.userId, userId),
@@ -452,6 +452,21 @@ export async function getUserData(userId: string) {
         ),
         db.select().from(userSettings).where(eq(userSettings.userId, userId)).limit(1)
       ]);
+
+      const items = itemsRes.status === 'fulfilled' ? itemsRes.value : [];
+      const diary = diaryRes.status === 'fulfilled' ? diaryRes.value : [];
+      const lists = listsRes.status === 'fulfilled' ? listsRes.value : [];
+      const settingsRows = settingsRes.status === 'fulfilled' ? settingsRes.value : [];
+
+      if (itemsRes.status === 'rejected') {
+        console.error("PostgreSQL error (mediaItems query):", itemsRes.reason?.message);
+      }
+      if (diaryRes.status === 'rejected') {
+        console.error("PostgreSQL error (diaryEntries query):", diaryRes.reason?.message);
+      }
+      if (listsRes.status === 'rejected') {
+        console.error("PostgreSQL error (customLists query):", listsRes.reason?.message);
+      }
 
       const settings = settingsRows.length > 0 ? settingsRows[0] : null;
 
