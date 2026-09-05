@@ -81,6 +81,8 @@ export const customLists = pgTable("custom_lists", {
   tmdbListId: text("tmdb_list_id"),
   coverImage: text("cover_image"),
   itemIds: jsonb("item_ids").$type<string[]>().default([]),
+  isDeleted: boolean("is_deleted").default(false),
+  deletedAt: text("deleted_at"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at")
 }, (table) => [

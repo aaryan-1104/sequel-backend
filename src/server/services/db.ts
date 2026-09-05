@@ -2,7 +2,7 @@ import { adminDb } from "../config/firebase.js";
 import { verifyJwtToken } from "../utils/jwt.js";
 import { db, pool, isDatabaseConfigured } from "../db/index.js";
 import { users, mediaItems, diaryEntries, customLists, userSettings, sessions } from "../db/schema.js";
-import { eq, or, sql, and, ne } from "drizzle-orm";
+import { eq, or, sql, and, ne, isNull } from "drizzle-orm";
 
 export interface DbUser {
   id: string;
@@ -444,7 +444,12 @@ export async function getUserData(userId: string) {
           )
         ),
         db.select().from(diaryEntries).where(eq(diaryEntries.userId, userId)),
-        db.select().from(customLists).where(eq(customLists.userId, userId)),
+        db.select().from(customLists).where(
+          and(
+            eq(customLists.userId, userId),
+            or(eq(customLists.isDeleted, false), isNull(customLists.isDeleted))
+          )
+        ),
         db.select().from(userSettings).where(eq(userSettings.userId, userId)).limit(1)
       ]);
 
@@ -827,6 +832,93 @@ export async function deleteUserCustomList(userId: string, listId: string) {
   }
 }
 
+export async function softDeleteAllUserData(userId: string) {
+  if (!userId) return;
+  userDataCache.delete(userId);
+
+  const now = new Date().toISOString();
+
+  if (isDatabaseConfigured() && db) {
+    try {
+      // 1. Soft-delete all media items internally
+      await db.update(mediaItems).set({
+        status: "deleted",
+        lastUpdatedAt: now
+      }).where(
+        and(
+          eq(mediaItems.userId, userId),
+          ne(mediaItems.status, "deleted")
+        )
+      );
+
+      // 2. Soft-delete all custom lists internally
+      await db.update(customLists).set({
+        isDeleted: true,
+        deletedAt: now,
+        updatedAt: now
+      }).where(
+        and(
+          eq(customLists.userId, userId),
+          or(eq(customLists.isDeleted, false), isNull(customLists.isDeleted))
+        )
+      );
+
+      // 3. Reset user settings custom collections & recommendations
+      await db.update(userSettings).set({
+        customCollections: [],
+        dismissedRecommendations: [],
+        updatedAt: now
+      }).where(eq(userSettings.userId, userId));
+    } catch (err: any) {
+      console.error("PostgreSQL error (softDeleteAllUserData):", err.message);
+    }
+  }
+
+  if (adminDb) {
+    try {
+      await adminDb.collection("user_data").doc(userId).set({
+        library: [],
+        customLists: [],
+        diary: [],
+        customCollections: [],
+        dismissedRecommendations: [],
+        deletedAt: now
+      }, { merge: true });
+
+      const itemsSnap = await adminDb.collection("users").doc(userId).collection("items").get();
+      if (!itemsSnap.empty) {
+        const batch = adminDb.batch();
+        itemsSnap.docs.forEach((doc: any) => {
+          batch.set(doc.ref, { status: "deleted", lastUpdatedAt: now }, { merge: true });
+        });
+        await batch.commit();
+      }
+
+      const listsSnap = await adminDb.collection("users").doc(userId).collection("lists").get();
+      if (!listsSnap.empty) {
+        const batch = adminDb.batch();
+        listsSnap.docs.forEach((doc: any) => {
+          batch.set(doc.ref, { isDeleted: true, deletedAt: now, updatedAt: now }, { merge: true });
+        });
+        await batch.commit();
+      }
+    } catch (err: any) {
+      console.error("Firestore error (softDeleteAllUserData):", err.message);
+    }
+  }
+
+  if (inMemoryUserData.has(userId)) {
+    inMemoryUserData.set(userId, {
+      library: [],
+      diary: [],
+      customLists: [],
+      customCollections: [],
+      dismissedRecommendations: [],
+      settings: {}
+    });
+  }
+}
+
 export async function saveUserSettingsAndCollections(
   userId: string,
   data: { customCollections?: any[]; dismissedRecommendations?: any[]; settings?: any }
@@ -1102,7 +1194,10 @@ export async function getPaginatedLibrary(
 
   if (isDatabaseConfigured() && db) {
     try {
-      const conditions = [eq(mediaItems.userId, userId)];
+      const conditions = [
+        eq(mediaItems.userId, userId),
+        ne(mediaItems.status, 'deleted')
+      ];
       if (options?.type && options.type !== 'all') {
         conditions.push(eq(mediaItems.type, options.type));
       }

@@ -18,7 +18,8 @@ import {
   saveUserItem,
   deleteUserItem,
   saveUserDiaryEntry,
-  deleteUserDiaryEntry
+  deleteUserDiaryEntry,
+  softDeleteAllUserData
 } from "../services/db.js";
 import { signJwtToken } from "../utils/jwt.js";
 import { adminAuth, adminDb } from "../config/firebase.js";
@@ -629,6 +630,26 @@ router.post("/sync-settings", async (req, res) => {
 
   await saveUserSettingsAndCollections(userId, { customCollections, dismissedRecommendations, settings });
   return res.json({ success: true });
+});
+
+// DANGER ZONE: SOFT-DELETE ALL USER LIBRARY & LIST DATA
+router.post("/delete-all-data", async (req, res) => {
+  const { token, confirmation } = req.body;
+  if (!token) {
+    return res.status(401).json({ error: "Unauthorized." });
+  }
+
+  if (!confirmation || typeof confirmation !== "string" || confirmation.trim().toLowerCase() !== "approved") {
+    return res.status(400).json({ error: "You must type 'approved' to confirm data deletion." });
+  }
+
+  const userId = await getUserIdByToken(token);
+  if (!userId) {
+    return res.status(401).json({ error: "Invalid session." });
+  }
+
+  await softDeleteAllUserData(userId);
+  return res.json({ success: true, message: "All user library and list data has been removed." });
 });
 
 export default router;
