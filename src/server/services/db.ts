@@ -501,7 +501,7 @@ export async function getUserData(userId: string) {
           createdAt: d.createdAt || d.date || "",
           updatedAt: (d as any).updatedAt || d.createdAt || d.date || ""
         })),
-        customLists: lists.map(l => ({ ...l, itemIds: l.itemIds || [] })),
+        customLists: lists.map(l => ({ ...l, itemIds: l.itemIds || [], isPublic: l.isPublic !== false })),
         customCollections: (settings?.customCollections as any[]) || [],
         dismissedRecommendations: (settings?.dismissedRecommendations as any[]) || [],
         settings: (settings?.settings as any) || {}
@@ -757,6 +757,7 @@ export async function saveUserCustomLists(userId: string, lists: any[]) {
         if (!list || !list.id) continue;
         const sId = String(list.id);
         activeIds.add(sId);
+        const isPublicVal = list.isPublic !== undefined ? Boolean(list.isPublic) : true;
         await db.insert(customLists).values({
           id: sId,
           userId,
@@ -766,6 +767,7 @@ export async function saveUserCustomLists(userId: string, lists: any[]) {
           tmdbListId: list.tmdbListId ? String(list.tmdbListId) : null,
           coverImage: list.coverImage || null,
           itemIds: Array.isArray(list.itemIds) ? list.itemIds : [],
+          isPublic: isPublicVal,
           isDeleted: false,
           deletedAt: null,
           createdAt: list.createdAt || new Date().toISOString(),
@@ -779,6 +781,7 @@ export async function saveUserCustomLists(userId: string, lists: any[]) {
             tmdbListId: list.tmdbListId ? String(list.tmdbListId) : null,
             coverImage: list.coverImage || null,
             itemIds: Array.isArray(list.itemIds) ? list.itemIds : [],
+            isPublic: isPublicVal,
             isDeleted: false,
             deletedAt: null,
             updatedAt: new Date().toISOString()
@@ -1126,6 +1129,7 @@ export async function saveUserData(
       if (Array.isArray(customListsData) && customListsData.length > 0) {
         for (const list of customListsData) {
           if (!list || !list.id) continue;
+          const isPublicVal = list.isPublic !== undefined ? Boolean(list.isPublic) : true;
           await db.insert(customLists).values({
             id: String(list.id),
             userId,
@@ -1135,6 +1139,7 @@ export async function saveUserData(
             tmdbListId: list.tmdbListId ? String(list.tmdbListId) : null,
             coverImage: list.coverImage || null,
             itemIds: Array.isArray(list.itemIds) ? list.itemIds : [],
+            isPublic: isPublicVal,
             createdAt: list.createdAt || new Date().toISOString(),
             updatedAt: list.updatedAt || new Date().toISOString()
           }).onConflictDoUpdate({
@@ -1146,6 +1151,7 @@ export async function saveUserData(
               tmdbListId: list.tmdbListId ? String(list.tmdbListId) : null,
               coverImage: list.coverImage || null,
               itemIds: Array.isArray(list.itemIds) ? list.itemIds : [],
+              isPublic: isPublicVal,
               updatedAt: new Date().toISOString()
             }
           });
