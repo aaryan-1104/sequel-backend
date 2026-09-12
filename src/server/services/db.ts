@@ -501,7 +501,7 @@ export async function getUserData(userId: string) {
           createdAt: d.createdAt || d.date || "",
           updatedAt: (d as any).updatedAt || d.createdAt || d.date || ""
         })),
-        customLists: lists.map(l => ({ ...l, itemIds: l.itemIds || [], isPublic: l.isPublic !== false })),
+        customLists: lists.map(l => ({ ...l, itemIds: l.itemIds || [], isPublic: Boolean(l.isPublic) })),
         customCollections: (settings?.customCollections as any[]) || [],
         dismissedRecommendations: (settings?.dismissedRecommendations as any[]) || [],
         settings: (settings?.settings as any) || {}
@@ -648,13 +648,33 @@ export async function deleteUserItem(userId: string, itemId: string | number) {
   if (!itemId) return;
   userDataCache.delete(userId);
 
+  const rawId = String(itemId).trim();
+  const cleanId = rawId.replace(/^(tvtime-show-|tvtime-movie-|tmdb-tv-|tmdb-movie-|tmdb-|lib-|temp-|custom-|imported-|movie-|tv-)/, '').trim();
+
   if (isDatabaseConfigured() && db) {
     try {
+      const matchConditions = [
+        eq(mediaItems.id, rawId),
+        eq(mediaItems.sourceId, rawId)
+      ];
+
+      if (cleanId) {
+        matchConditions.push(
+          eq(mediaItems.id, cleanId),
+          eq(mediaItems.sourceId, cleanId),
+          eq(mediaItems.tmdbId, cleanId),
+          eq(mediaItems.tvdbId, cleanId)
+        );
+      }
+
       await db.update(mediaItems).set({
         status: "deleted",
         lastUpdatedAt: new Date().toISOString()
       }).where(
-        and(eq(mediaItems.userId, userId), eq(mediaItems.id, String(itemId)))
+        and(
+          eq(mediaItems.userId, userId),
+          or(...matchConditions)
+        )
       );
       return;
     } catch (err: any) {
@@ -664,10 +684,16 @@ export async function deleteUserItem(userId: string, itemId: string | number) {
 
   if (adminDb) {
     try {
-      await adminDb.collection("users").doc(userId).collection("items").doc(String(itemId)).set({
+      await adminDb.collection("users").doc(userId).collection("items").doc(rawId).set({
         status: "deleted",
         lastUpdatedAt: new Date().toISOString()
       }, { merge: true });
+      if (cleanId && cleanId !== rawId) {
+        await adminDb.collection("users").doc(userId).collection("items").doc(cleanId).set({
+          status: "deleted",
+          lastUpdatedAt: new Date().toISOString()
+        }, { merge: true });
+      }
     } catch (err: any) {
       console.error("Firestore error (deleteUserItem):", err.message);
     }
