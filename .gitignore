@@ -9,3 +9,5 @@ GEMINI.md
 AGENTS.md
 .agents/
 .gemini/
+tasks/
+test_results.md

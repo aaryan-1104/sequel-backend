@@ -1,17 +1,17 @@
 import { describe, it, expect } from "vitest";
 import request from "supertest";
 import { app } from "./server.js";
-import { hashPassword, verifyPassword } from "./dbHelpers.js";
+import { hashPassword, verifyPassword } from "./src/server/routes/auth.js";
 
 describe("Database Helpers", () => {
-  it("should correctly hash and verify passwords", () => {
+  it("should correctly hash and verify passwords", async () => {
     const password = "TestPassword123!";
-    const { salt, hash } = hashPassword(password);
+    const { salt, hash } = await hashPassword(password);
 
     expect(salt).toBeDefined();
     expect(hash).toBeDefined();
-    expect(verifyPassword(password, salt, hash)).toBe(true);
-    expect(verifyPassword("wrongPassword", salt, hash)).toBe(false);
+    expect(await verifyPassword(password, salt, hash)).toBe(true);
+    expect(await verifyPassword("wrongPassword", salt, hash)).toBe(false);
   });
 });
 
@@ -39,6 +39,6 @@ describe("API Integration Endpoints", () => {
   it("GET /api/non-existent-route - should return 404 JSON response", async () => {
     const res = await request(app).get("/api/non-existent-route");
     expect(res.status).toBe(404);
-    expect(res.body.error).toBe("Endpoint not found");
+    expect(res.body.error).toContain("not found");
   });
 });

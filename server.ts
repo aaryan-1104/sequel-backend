@@ -138,7 +138,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   next(err);
 });
 
-if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
+if (process.env.NODE_ENV !== "production" && process.env.NODE_ENV !== "test" && !process.env.VERCEL) {
   app.listen(PORT as number, "0.0.0.0", () => {
     console.log(`Backend API Server running on port ${PORT}`);
   });

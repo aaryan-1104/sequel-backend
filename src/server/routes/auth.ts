@@ -34,13 +34,13 @@ const PBKDF2_KEYLEN = 64;
 const PBKDF2_DIGEST = "sha512";
 
 // OWASP-compliant Password utility (600,000 rounds of PBKDF2-HMAC-SHA512)
-async function hashPassword(password: string): Promise<{ salt: string; hash: string }> {
+export async function hashPassword(password: string): Promise<{ salt: string; hash: string }> {
   const salt = crypto.randomBytes(16).toString("hex");
   const derivedKey = await pbkdf2Async(password, salt, PBKDF2_ITERATIONS, PBKDF2_KEYLEN, PBKDF2_DIGEST);
   return { salt, hash: derivedKey.toString("hex") };
 }
 
-async function verifyPassword(password: string, salt: string, hash: string): Promise<boolean> {
+export async function verifyPassword(password: string, salt: string, hash: string): Promise<boolean> {
   if (!salt || !hash) return false;
   try {
     const checkKey = await pbkdf2Async(password, salt, PBKDF2_ITERATIONS, PBKDF2_KEYLEN, PBKDF2_DIGEST);

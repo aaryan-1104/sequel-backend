@@ -121,3 +121,72 @@ export const userPushSubscriptions = pgTable("user_push_subscriptions", {
   index("idx_push_user").on(table.userId),
   index("idx_push_endpoint").on(table.endpoint),
 ]);
+
+// ==========================================
+// CANONICAL DECOUPLED ARCHITECTURE (PHASE 1)
+// ==========================================
+
+export const canonicalMedia = pgTable("canonical_media", {
+  id: text("id").primaryKey(), // e.g. "movie-tmdb-550", "tv-tmdb-1399", "book-ol-12345"
+  type: text("type").notNull(), // 'movie' | 'tv' | 'book'
+  title: text("title").notNull(),
+  originalTitle: text("original_title"),
+  releaseDate: text("release_date"),
+  poster: text("poster"),
+  backdrop: text("backdrop"),
+  synopsis: text("synopsis"),
+  genres: jsonb("genres").$type<string[]>().default([]),
+  creators: jsonb("creators").$type<string[]>().default([]),
+  platforms: jsonb("platforms").$type<string[]>().default([]),
+  runtime: text("runtime"),
+  totalEpisodes: integer("total_episodes"),
+  rawMetadata: jsonb("raw_metadata"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at")
+}, (table) => [
+  index("idx_canonical_type").on(table.type),
+  index("idx_canonical_title").on(table.title),
+]);
+
+export const mediaExternalIds = pgTable("media_external_ids", {
+  mediaId: text("media_id").notNull().references(() => canonicalMedia.id, { onDelete: "cascade" }),
+  provider: text("provider").notNull(), // 'tmdb' | 'tvdb' | 'imdb' | 'isbn13' | 'googlebooks' | 'openlibrary'
+  externalId: text("external_id").notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.provider, table.externalId] }),
+  index("idx_external_ids_media").on(table.mediaId),
+]);
+
+export const userLibrary = pgTable("user_library", {
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  mediaId: text("media_id").notNull().references(() => canonicalMedia.id, { onDelete: "cascade" }),
+  status: text("status").notNull(), // 'backlog' | 'in-progress' | 'completed' | 'abandoned' | 'deleted'
+  rating: real("rating"),
+  favorite: boolean("favorite").default(false),
+  progress: integer("progress"),
+  notes: text("notes"),
+  tags: jsonb("tags").$type<string[]>().default([]),
+  watchedEpisodes: jsonb("watched_episodes").$type<Record<string, boolean>>().default({}), // JSONB as chosen
+  userProgress: jsonb("user_progress"),
+  tvSpecifics: jsonb("tv_specifics"),
+  bookSpecifics: jsonb("book_specifics"),
+  movieSpecifics: jsonb("movie_specifics"),
+  addedAt: text("added_at").notNull(),
+  lastUpdatedAt: text("last_updated_at")
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.mediaId] }),
+  index("idx_user_library_user").on(table.userId),
+  index("idx_user_library_user_status").on(table.userId, table.status),
+  index("idx_user_library_updated").on(table.userId, table.lastUpdatedAt),
+]);
+
+export const customListItems = pgTable("custom_list_items", {
+  listId: text("list_id").notNull().references(() => customLists.id, { onDelete: "cascade" }),
+  mediaId: text("media_id").notNull().references(() => canonicalMedia.id, { onDelete: "cascade" }),
+  position: integer("position").notNull(),
+  notes: text("notes"),
+  addedAt: text("added_at").notNull()
+}, (table) => [
+  primaryKey({ columns: [table.listId, table.mediaId] }),
+  index("idx_custom_list_items_order").on(table.listId, table.position),
+]);

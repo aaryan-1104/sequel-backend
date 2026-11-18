@@ -1,8 +1,19 @@
 import { adminDb } from "../config/firebase.js";
 import { verifyJwtToken } from "../utils/jwt.js";
 import { db, pool, isDatabaseConfigured } from "../db/index.js";
-import { users, mediaItems, diaryEntries, customLists, userSettings, sessions } from "../db/schema.js";
-import { eq, or, sql, and, ne, isNull } from "drizzle-orm";
+import { 
+  users, 
+  mediaItems, 
+  diaryEntries, 
+  customLists, 
+  userSettings, 
+  sessions,
+  canonicalMedia,
+  mediaExternalIds,
+  userLibrary,
+  customListItems
+} from "../db/schema.js";
+import { eq, or, sql, and, ne, isNull, asc } from "drizzle-orm";
 
 export interface DbUser {
   id: string;
@@ -41,6 +52,27 @@ const TMDB_GENRES: Record<number, string> = {
   10762: "Kids", 10763: "News", 10764: "Reality", 10765: "Sci-Fi & Fantasy", 10766: "Soap",
   10767: "Talk", 10768: "War & Politics"
 };
+
+export function resolveCanonicalMediaId(item: any): string {
+  const type = item.type || "movie";
+  if (item.tmdbId || item.tmdb_id) {
+    const tmdbId = String(item.tmdbId || item.tmdb_id).replace(/^(tmdb-)+/, '');
+    return `${type}-tmdb-${tmdbId}`;
+  }
+  if (item.imdbId || item.imdb_id) {
+    return `${type}-imdb-${item.imdbId || item.imdb_id}`;
+  }
+  if (item.tvdbId || item.tvdb_id) {
+    return `tv-tvdb-${item.tvdbId || item.tvdb_id}`;
+  }
+  if (item.sourceId || item.source_id) {
+    const sId = String(item.sourceId || item.source_id);
+    return `${type}-${sId.replace(/^([a-z0-9]+)-/i, '')}`;
+  }
+  const rawId = String(item.id || "").trim();
+  const clean = rawId.replace(/^(tvtime-show-|tvtime-movie-|tmdb-tv-|tmdb-movie-|tmdb-|lib-|temp-|custom-|imported-|movie-|tv-)/i, "");
+  return `${type}-${clean || rawId}`;
+}
 
 export function selectBestTmdbMatch(results: any[], targetTitle: string, targetYear?: string | number): any {
   if (!results || results.length === 0) return null;
@@ -436,13 +468,48 @@ export async function getUserData(userId: string) {
 
   if (isDatabaseConfigured() && db) {
     try {
-      const [itemsRes, diaryRes, listsRes, settingsRes] = await Promise.allSettled([
-        db.select().from(mediaItems).where(
-          and(
-            eq(mediaItems.userId, userId),
-            ne(mediaItems.status, "deleted")
-          )
-        ),
+      // 1. Fetch user_library joined with canonical_media, plus diary, custom lists, and settings in parallel
+      const [userLibRes, diaryRes, listsRes, listItemsRes, settingsRes] = await Promise.allSettled([
+        db
+          .select({
+            userId: userLibrary.userId,
+            mediaId: userLibrary.mediaId,
+            status: userLibrary.status,
+            rating: userLibrary.rating,
+            favorite: userLibrary.favorite,
+            progress: userLibrary.progress,
+            notes: userLibrary.notes,
+            tags: userLibrary.tags,
+            watchedEpisodes: userLibrary.watchedEpisodes,
+            userProgress: userLibrary.userProgress,
+            tvSpecifics: userLibrary.tvSpecifics,
+            bookSpecifics: userLibrary.bookSpecifics,
+            movieSpecifics: userLibrary.movieSpecifics,
+            addedAt: userLibrary.addedAt,
+            lastUpdatedAt: userLibrary.lastUpdatedAt,
+            // Canonical fields
+            type: canonicalMedia.type,
+            title: canonicalMedia.title,
+            originalTitle: canonicalMedia.originalTitle,
+            releaseDate: canonicalMedia.releaseDate,
+            poster: canonicalMedia.poster,
+            backdrop: canonicalMedia.backdrop,
+            synopsis: canonicalMedia.synopsis,
+            genres: canonicalMedia.genres,
+            creators: canonicalMedia.creators,
+            platforms: canonicalMedia.platforms,
+            runtime: canonicalMedia.runtime,
+            totalEpisodes: canonicalMedia.totalEpisodes,
+            rawMetadata: canonicalMedia.rawMetadata
+          })
+          .from(userLibrary)
+          .innerJoin(canonicalMedia, eq(userLibrary.mediaId, canonicalMedia.id))
+          .where(
+            and(
+              eq(userLibrary.userId, userId),
+              ne(userLibrary.status, "deleted")
+            )
+          ),
         db.select().from(diaryEntries).where(eq(diaryEntries.userId, userId)),
         db.select().from(customLists).where(
           and(
@@ -450,16 +517,62 @@ export async function getUserData(userId: string) {
             or(eq(customLists.isDeleted, false), isNull(customLists.isDeleted))
           )
         ),
+        db.select().from(customListItems).orderBy(asc(customListItems.position)),
         db.select().from(userSettings).where(eq(userSettings.userId, userId)).limit(1)
       ]);
 
-      const items = itemsRes.status === 'fulfilled' ? itemsRes.value : [];
+      let userLibItems = userLibRes.status === 'fulfilled' ? userLibRes.value : [];
       const diary = diaryRes.status === 'fulfilled' ? diaryRes.value : [];
       const lists = listsRes.status === 'fulfilled' ? listsRes.value : [];
+      const allListItems = listItemsRes.status === 'fulfilled' ? listItemsRes.value : [];
       const settingsRows = settingsRes.status === 'fulfilled' ? settingsRes.value : [];
 
-      if (itemsRes.status === 'rejected') {
-        console.error("PostgreSQL error (mediaItems query):", itemsRes.reason?.message);
+      // Seamless fallback: if user_library has no rows yet for this user, query legacy media_items
+      if (userLibItems.length === 0) {
+        try {
+          const fallbackRes = await db.select().from(mediaItems).where(
+            and(
+              eq(mediaItems.userId, userId),
+              ne(mediaItems.status, "deleted")
+            )
+          );
+          if (fallbackRes.length > 0) {
+            userLibItems = fallbackRes.map(i => ({
+              userId: i.userId,
+              mediaId: i.id,
+              status: i.status,
+              rating: i.rating,
+              favorite: Boolean(i.favorite),
+              progress: typeof (i as any).progress === 'number' ? (i as any).progress : null,
+              notes: i.notes,
+              tags: i.tags || [],
+              watchedEpisodes: i.watchedEpisodes || {},
+              userProgress: i.userProgress,
+              tvSpecifics: i.tvSpecifics,
+              bookSpecifics: i.bookSpecifics,
+              movieSpecifics: (i as any).movieSpecifics,
+              addedAt: i.addedAt,
+              lastUpdatedAt: i.lastUpdatedAt,
+              type: i.type,
+              title: i.title,
+              originalTitle: null,
+              releaseDate: i.releaseDate,
+              poster: i.poster,
+              backdrop: i.backdrop,
+              synopsis: (i.rawMetadata as any)?.synopsis || (i.rawMetadata as any)?.overview || i.notes,
+              genres: i.genres || [],
+              creators: (i.rawMetadata as any)?.creators || [],
+              platforms: (i.rawMetadata as any)?.platforms || [],
+              runtime: (i.rawMetadata as any)?.runtime || null,
+              totalEpisodes: i.totalEpisodes,
+              rawMetadata: i.rawMetadata
+            }));
+          }
+        } catch (e) {}
+      }
+
+      if (userLibRes.status === 'rejected') {
+        console.error("PostgreSQL error (userLibrary query):", userLibRes.reason?.message);
       }
       if (diaryRes.status === 'rejected') {
         console.error("PostgreSQL error (diaryEntries query):", diaryRes.reason?.message);
@@ -468,23 +581,50 @@ export async function getUserData(userId: string) {
         console.error("PostgreSQL error (customLists query):", listsRes.reason?.message);
       }
 
+      // Group normalized list items by listId
+      const listItemsGroup = new Map<string, string[]>();
+      for (const item of allListItems) {
+        if (!listItemsGroup.has(item.listId)) {
+          listItemsGroup.set(item.listId, []);
+        }
+        listItemsGroup.get(item.listId)!.push(item.mediaId);
+      }
+
       const settings = settingsRows.length > 0 ? settingsRows[0] : null;
 
       const result = {
-        library: items.map(i => {
-          const meta: any = i.rawMetadata || {};
+        library: userLibItems.map(row => {
+          const meta: any = row.rawMetadata || {};
+          const isTv = row.type === 'tv';
           return {
-            ...i,
-            coverUrl: i.poster || (i as any).coverUrl || "",
-            backdropUrl: i.backdrop || (i as any).backdropUrl || "",
-            genres: i.genres || [],
-            tags: i.tags || [],
-            creators: (i as any).creators || meta.creators || [],
-            platforms: (i as any).platforms || meta.platforms || [],
-            runtime: (i as any).runtime || meta.runtime || "",
-            progress: (i as any).progress ?? meta.progress ?? 0,
-            movieSpecifics: (i as any).movieSpecifics || meta.movieSpecifics || null,
-            watchedEpisodes: i.watchedEpisodes || i.tvSpecifics?.watchedEpisodes || {},
+            id: row.mediaId,
+            sourceId: row.mediaId,
+            title: row.title || "Untitled",
+            type: row.type || "movie",
+            status: row.status || "planned",
+            rating: typeof row.rating === 'number' ? row.rating : null,
+            favorite: Boolean(row.favorite),
+            poster: row.poster || (row as any).coverUrl || "",
+            backdrop: row.backdrop || (row as any).backdropUrl || "",
+            coverUrl: row.poster || (row as any).coverUrl || "",
+            backdropUrl: row.backdrop || (row as any).backdropUrl || "",
+            releaseDate: row.releaseDate || "",
+            synopsis: row.synopsis || meta.synopsis || meta.overview || "",
+            genres: Array.isArray(row.genres) ? row.genres : [],
+            tags: Array.isArray(row.tags) ? row.tags : [],
+            creators: Array.isArray(row.creators) ? row.creators : (meta.creators || []),
+            platforms: Array.isArray(row.platforms) ? row.platforms : (meta.platforms || []),
+            runtime: row.runtime || meta.runtime || "",
+            progress: row.progress ?? meta.progress ?? 0,
+            userProgress: row.userProgress || null,
+            watchedEpisodes: row.watchedEpisodes || (row.tvSpecifics as any)?.watchedEpisodes || {},
+            tvSpecifics: (row.tvSpecifics as any) || (isTv ? { watchedEpisodes: row.watchedEpisodes || {} } : null),
+            bookSpecifics: row.bookSpecifics || null,
+            movieSpecifics: row.movieSpecifics || meta.movieSpecifics || null,
+            notes: row.notes || "",
+            addedAt: row.addedAt || new Date().toISOString(),
+            lastUpdatedAt: row.lastUpdatedAt || new Date().toISOString(),
+            rawMetadata: meta,
           };
         }),
         diary: diary.map(d => ({
@@ -501,7 +641,15 @@ export async function getUserData(userId: string) {
           createdAt: d.createdAt || d.date || "",
           updatedAt: (d as any).updatedAt || d.createdAt || d.date || ""
         })),
-        customLists: lists.map(l => ({ ...l, itemIds: l.itemIds || [], isPublic: Boolean(l.isPublic) })),
+        customLists: lists.map(l => {
+          const normalized = listItemsGroup.get(l.id);
+          const itemIds = normalized && normalized.length > 0 ? normalized : (l.itemIds || []);
+          return {
+            ...l,
+            itemIds,
+            isPublic: Boolean(l.isPublic)
+          };
+        }),
         customCollections: (settings?.customCollections as any[]) || [],
         dismissedRecommendations: (settings?.dismissedRecommendations as any[]) || [],
         settings: (settings?.settings as any) || {}
@@ -548,6 +696,8 @@ export async function saveUserItem(userId: string, item: any) {
       const incomingSourceId = item.sourceId ? String(item.sourceId) : null;
       const incomingTvdbId = item.tvdbId ? String(item.tvdbId) : null;
       const incomingTmdbId = item.tmdbId ? String(item.tmdbId).replace(/^(tmdb-)+/, '') : null;
+      const incomingImdbId = item.imdbId ? String(item.imdbId) : null;
+      const canonicalId = resolveCanonicalMediaId(item);
 
       // Smart de-duplication: check if an existing row already exists for this user by ID, sourceId, tvdbId, or tmdbId
       let targetId = incomingId;
@@ -581,6 +731,83 @@ export async function saveUserItem(userId: string, item: any) {
         movieSpecifics: item.movieSpecifics || undefined,
       };
 
+      // 1. Upsert Canonical Media Catalog
+      await db.insert(canonicalMedia).values({
+        id: canonicalId,
+        type: item.type || "movie",
+        title: item.title || "Untitled",
+        originalTitle: item.originalTitle || null,
+        releaseDate: item.releaseDate || item.firstAirDate || null,
+        poster: item.coverUrl || item.poster || null,
+        backdrop: item.backdrop || item.backdropUrl || null,
+        synopsis: item.synopsis || item.overview || item.notes || null,
+        genres: Array.isArray(item.genres) ? item.genres : [],
+        creators: Array.isArray(item.creators) ? item.creators : [],
+        platforms: Array.isArray(item.platforms) ? item.platforms : [],
+        runtime: item.runtime || null,
+        totalEpisodes: typeof item.totalEpisodes === "number" ? item.totalEpisodes : null,
+        rawMetadata: mergedMetadata,
+        createdAt: item.addedAt || new Date().toISOString(),
+        updatedAt: item.lastUpdatedAt || new Date().toISOString()
+      }).onConflictDoUpdate({
+        target: canonicalMedia.id,
+        set: {
+          poster: item.coverUrl || item.poster || sql`canonical_media.poster`,
+          backdrop: item.backdrop || item.backdropUrl || sql`canonical_media.backdrop`,
+          synopsis: item.synopsis || item.overview || sql`canonical_media.synopsis`,
+          updatedAt: new Date().toISOString()
+        }
+      });
+
+      // 2. Upsert Media External IDs
+      if (incomingTmdbId) {
+        await db.insert(mediaExternalIds).values({ mediaId: canonicalId, provider: "tmdb", externalId: incomingTmdbId }).onConflictDoNothing();
+      }
+      if (incomingTvdbId) {
+        await db.insert(mediaExternalIds).values({ mediaId: canonicalId, provider: "tvdb", externalId: incomingTvdbId }).onConflictDoNothing();
+      }
+      if (incomingImdbId) {
+        await db.insert(mediaExternalIds).values({ mediaId: canonicalId, provider: "imdb", externalId: incomingImdbId }).onConflictDoNothing();
+      }
+      if (incomingSourceId) {
+        await db.insert(mediaExternalIds).values({ mediaId: canonicalId, provider: "source", externalId: incomingSourceId }).onConflictDoNothing();
+      }
+
+      // 3. Upsert User Library (with watchedEpisodes as JSONB)
+      await db.insert(userLibrary).values({
+        userId,
+        mediaId: canonicalId,
+        status: item.status || "planned",
+        rating: typeof item.rating === "number" ? item.rating : null,
+        favorite: Boolean(item.favorite),
+        progress: typeof item.progress === "number" ? item.progress : null,
+        notes: item.notes || null,
+        tags: Array.isArray(item.tags) ? item.tags : [],
+        watchedEpisodes: item.watchedEpisodes || item.tvSpecifics?.watchedEpisodes || {},
+        userProgress: item.userProgress || null,
+        tvSpecifics: item.tvSpecifics || null,
+        bookSpecifics: item.bookSpecifics || null,
+        movieSpecifics: item.movieSpecifics || null,
+        addedAt: item.addedAt || new Date().toISOString(),
+        lastUpdatedAt: item.lastUpdatedAt || new Date().toISOString(),
+      }).onConflictDoUpdate({
+        target: [userLibrary.userId, userLibrary.mediaId],
+        set: {
+          status: item.status || "planned",
+          rating: typeof item.rating === "number" ? item.rating : null,
+          favorite: Boolean(item.favorite),
+          progress: typeof item.progress === "number" ? item.progress : null,
+          notes: item.notes || null,
+          tags: Array.isArray(item.tags) ? item.tags : [],
+          watchedEpisodes: item.watchedEpisodes || item.tvSpecifics?.watchedEpisodes || {},
+          tvSpecifics: item.tvSpecifics || null,
+          bookSpecifics: item.bookSpecifics || null,
+          movieSpecifics: item.movieSpecifics || null,
+          lastUpdatedAt: item.lastUpdatedAt || new Date().toISOString(),
+        }
+      });
+
+      // 4. Keep legacy media_items in sync for complete dual-table safety
       await db.insert(mediaItems).values({
         id: targetId,
         userId,
@@ -650,9 +877,25 @@ export async function deleteUserItem(userId: string, itemId: string | number) {
 
   const rawId = String(itemId).trim();
   const cleanId = rawId.replace(/^(tvtime-show-|tvtime-movie-|tmdb-tv-|tmdb-movie-|tmdb-|lib-|temp-|custom-|imported-|movie-|tv-)/, '').trim();
+  const canonicalId = resolveCanonicalMediaId({ id: rawId });
 
   if (isDatabaseConfigured() && db) {
     try {
+      // 1. Soft-delete in user_library
+      await db.update(userLibrary).set({
+        status: "deleted",
+        lastUpdatedAt: new Date().toISOString()
+      }).where(
+        and(
+          eq(userLibrary.userId, userId),
+          or(
+            eq(userLibrary.mediaId, canonicalId),
+            eq(userLibrary.mediaId, rawId)
+          )
+        )
+      );
+
+      // 2. Soft-delete in legacy media_items
       const matchConditions = [
         eq(mediaItems.id, rawId),
         eq(mediaItems.sourceId, rawId)
@@ -813,6 +1056,30 @@ export async function saveUserCustomLists(userId: string, lists: any[]) {
             updatedAt: new Date().toISOString()
           }
         });
+
+        // Sync normalized custom_list_items
+        if (Array.isArray(list.itemIds)) {
+          let pos = 0;
+          for (const rawItemId of list.itemIds) {
+            const canonicalId = resolveCanonicalMediaId({ id: rawItemId });
+            await db.insert(canonicalMedia).values({
+              id: canonicalId,
+              type: "movie",
+              title: "Custom Item",
+              createdAt: new Date().toISOString()
+            }).onConflictDoNothing();
+
+            await db.insert(customListItems).values({
+              listId: sId,
+              mediaId: canonicalId,
+              position: pos++,
+              addedAt: new Date().toISOString()
+            }).onConflictDoUpdate({
+              target: [customListItems.listId, customListItems.mediaId],
+              set: { position: pos - 1 }
+            });
+          }
+        }
       }
 
       const existingLists = await db.select({ id: customLists.id }).from(customLists).where(
@@ -1038,7 +1305,7 @@ export async function saveUserData(
           const incomingTmdbId = item.tmdbId ? String(item.tmdbId) : null;
 
           let targetId = incomingId;
-          if (incomingSourceId || incomingTvdbId || incomingTmdbId) {
+          if (pool && (incomingSourceId || incomingTvdbId || incomingTmdbId)) {
             try {
               const existingMatch = await pool.query(
                 `SELECT id FROM media_items 
@@ -1276,7 +1543,7 @@ export async function getPaginatedLibrary(
           backdropUrl: i.backdrop || (i as any).backdropUrl || "",
           genres: i.genres || [],
           tags: i.tags || [],
-          watchedEpisodes: i.watchedEpisodes || i.tvSpecifics?.watchedEpisodes || {},
+          watchedEpisodes: i.watchedEpisodes || (i.tvSpecifics as any)?.watchedEpisodes || {},
         })),
         pagination: {
           page,
@@ -1294,14 +1561,14 @@ export async function getPaginatedLibrary(
   const fullData = await getUserData(userId);
   let list = fullData.library;
   if (options?.type && options.type !== 'all') {
-    list = list.filter(i => i.type === options.type);
+    list = list.filter((i: any) => i.type === options.type);
   }
   if (options?.status && options.status !== 'all') {
-    list = list.filter(i => i.status === options.status);
+    list = list.filter((i: any) => i.status === options.status);
   }
   if (options?.search) {
     const q = options.search.toLowerCase().trim();
-    list = list.filter(i => (i.title || '').toLowerCase().includes(q));
+    list = list.filter((i: any) => (i.title || '').toLowerCase().includes(q));
   }
   const total = list.length;
   const paginated = list.slice(offset, offset + limit);
@@ -1324,6 +1591,7 @@ export async function mergeUserData(fromUserId: string, toUserId: string) {
 
   if (isDatabaseConfigured() && db) {
     try {
+      await db.update(userLibrary).set({ userId: toUserId }).where(eq(userLibrary.userId, fromUserId));
       await db.update(mediaItems).set({ userId: toUserId }).where(eq(mediaItems.userId, fromUserId));
       await db.update(diaryEntries).set({ userId: toUserId }).where(eq(diaryEntries.userId, fromUserId));
       await db.update(customLists).set({ userId: toUserId }).where(eq(customLists.userId, fromUserId));
