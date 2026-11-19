@@ -2731,4 +2731,72 @@ router.get("/tmdb-streaming", async (req, res) => {
   }
 });
 
+const IMAGES_CACHE = new Map<string, { timestamp: number; data: any }>();
+const IMAGES_CACHE_TTL = 1000 * 60 * 60 * 24; // 24 hours
+
+router.all("/tmdb-images", async (req, res) => {
+  const { tmdbId, type } = (req.body && Object.keys(req.body).length > 0) ? req.body : req.query;
+  const cleanId = tmdbId ? String(tmdbId).replace(/\D/g, '').trim() : '';
+  const cleanType = type === 'tv' ? 'tv' : 'movie';
+
+  if (!cleanId || !process.env.TMDB_API_KEY) {
+    return res.status(400).json({ error: "Invalid tmdbId or TMDB API key missing." });
+  }
+
+  res.setHeader("Cache-Control", "public, s-maxage=86400, stale-while-revalidate=604800");
+
+  const cacheKey = `images-${cleanType}-${cleanId}`;
+  if (IMAGES_CACHE.has(cacheKey)) {
+    const cached = IMAGES_CACHE.get(cacheKey)!;
+    if (Date.now() - cached.timestamp < IMAGES_CACHE_TTL) {
+      return res.json(cached.data);
+    }
+  }
+
+  const rawKey = process.env.TMDB_API_KEY || '';
+  const tmdbKey = rawKey.replace(/^Bearer\s+/i, '').trim();
+  const isBearer = tmdbKey.length > 40;
+  const headers = {
+    accept: 'application/json',
+    ...(isBearer && { Authorization: `Bearer ${tmdbKey}` })
+  };
+
+  try {
+    const tmdbUrl = `https://api.tmdb.org/3/${cleanType}/${cleanId}/images?include_image_language=en,null,fr,ja,ko,es,de,it,pt${!isBearer ? `&api_key=${tmdbKey}` : ''}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const tmdbRes = await fetch(tmdbUrl, { headers, signal: controller.signal }).finally(() => clearTimeout(timeoutId));
+
+    if (!tmdbRes.ok) {
+      return res.status(tmdbRes.status).json({ error: "Failed to fetch images from TMDB" });
+    }
+
+    const data = await tmdbRes.json();
+    const result = {
+      id: cleanId,
+      type: cleanType,
+      posters: (data.posters || []).map((p: any) => ({
+        file_path: p.file_path,
+        width: p.width,
+        height: p.height,
+        aspect_ratio: p.aspect_ratio,
+        iso_639_1: p.iso_639_1,
+        vote_average: p.vote_average,
+        vote_count: p.vote_count,
+      })),
+      backdrops: (data.backdrops || []).slice(0, 10).map((b: any) => ({
+        file_path: b.file_path,
+        width: b.width,
+        height: b.height,
+      })),
+    };
+
+    IMAGES_CACHE.set(cacheKey, { timestamp: Date.now(), data: result });
+    return res.json(result);
+  } catch (err: any) {
+    console.error("[TMDB Images] Error:", err?.message || err);
+    return res.status(500).json({ error: "Failed to fetch TMDB images" });
+  }
+});
+
 export default router;
