@@ -46,7 +46,7 @@ app.use(cors({
       origin.startsWith('http://localhost:') || 
       origin.startsWith('http://192.168.') ||
       origin.startsWith('http://127.0.0.1:') ||
-      origin.match(/^https:\/\/sequel-.*\.vercel\.app$/) // Allow Vercel preview deployments
+      origin.endsWith('.vercel.app') // Allow all Vercel production & preview deployments (sequel-*, chr0nicle-*, etc.)
     ) {
       callback(null, true);
     } else {
