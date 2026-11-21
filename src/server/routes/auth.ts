@@ -9,6 +9,7 @@ import {
   deleteSession, 
   getUserIdByToken, 
   getUserData, 
+  getDeltaSyncData,
   getPaginatedLibrary,
   mergeUserData,
   saveUserData,
@@ -481,6 +482,33 @@ router.post("/sync-get", async (req, res) => {
   }
 
   return res.json(data);
+});
+
+// INCREMENTAL DELTA SYNC GET (Only records changed since timestamp)
+router.post("/sync-delta", async (req, res) => {
+  const { token, since } = req.body;
+  if (!token) {
+    return res.status(401).json({ error: "Unauthorized." });
+  }
+
+  const userId = await getUserIdByToken(token);
+  if (!userId) {
+    return res.status(401).json({ error: "Invalid session." });
+  }
+
+  if (!since) {
+    const data: any = await getUserData(userId);
+    return res.json({
+      isDelta: false,
+      library: data.library || [],
+      diary: data.diary || [],
+      customLists: data.customLists || [],
+      timestamp: Date.now()
+    });
+  }
+
+  const delta = await getDeltaSyncData(userId, since);
+  return res.json(delta);
 });
 
 // DEDICATED PAGINATED LIBRARY ENDPOINT

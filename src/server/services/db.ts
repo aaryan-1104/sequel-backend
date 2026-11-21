@@ -13,7 +13,7 @@ import {
   userLibrary,
   customListItems
 } from "../db/schema.js";
-import { eq, or, sql, and, ne, isNull, asc } from "drizzle-orm";
+import { eq, or, sql, and, ne, isNull, asc, gt } from "drizzle-orm";
 
 export interface DbUser {
   id: string;
@@ -1581,6 +1581,226 @@ export async function getPaginatedLibrary(
       totalPages: Math.ceil(total / limit),
       hasMore: offset + limit < total
     }
+  };
+}
+
+export async function getDeltaSyncData(userId: string, since: number | string) {
+  let sinceIso: string;
+  try {
+    const num = Number(since);
+    if (!isNaN(num) && num > 0) {
+      sinceIso = new Date(num).toISOString();
+    } else {
+      sinceIso = new Date(String(since)).toISOString();
+    }
+  } catch {
+    sinceIso = new Date(0).toISOString();
+  }
+
+  if (isDatabaseConfigured() && db) {
+    try {
+      // 1. Fetch user_library items modified after sinceIso
+      const userLibRes = await db
+        .select({
+          userId: userLibrary.userId,
+          mediaId: userLibrary.mediaId,
+          status: userLibrary.status,
+          rating: userLibrary.rating,
+          favorite: userLibrary.favorite,
+          progress: userLibrary.progress,
+          notes: userLibrary.notes,
+          tags: userLibrary.tags,
+          watchedEpisodes: userLibrary.watchedEpisodes,
+          userProgress: userLibrary.userProgress,
+          tvSpecifics: userLibrary.tvSpecifics,
+          bookSpecifics: userLibrary.bookSpecifics,
+          movieSpecifics: userLibrary.movieSpecifics,
+          addedAt: userLibrary.addedAt,
+          lastUpdatedAt: userLibrary.lastUpdatedAt,
+          type: canonicalMedia.type,
+          title: canonicalMedia.title,
+          originalTitle: canonicalMedia.originalTitle,
+          releaseDate: canonicalMedia.releaseDate,
+          poster: canonicalMedia.poster,
+          backdrop: canonicalMedia.backdrop,
+          synopsis: canonicalMedia.synopsis,
+          genres: canonicalMedia.genres,
+          creators: canonicalMedia.creators,
+          platforms: canonicalMedia.platforms,
+          runtime: canonicalMedia.runtime,
+          totalEpisodes: canonicalMedia.totalEpisodes,
+          rawMetadata: canonicalMedia.rawMetadata
+        })
+        .from(userLibrary)
+        .innerJoin(canonicalMedia, eq(userLibrary.mediaId, canonicalMedia.id))
+        .where(
+          and(
+            eq(userLibrary.userId, userId),
+            or(
+              gt(userLibrary.lastUpdatedAt, sinceIso),
+              gt(userLibrary.addedAt, sinceIso)
+            )
+          )
+        );
+
+      let updatedLibrary = userLibRes;
+
+      // Fallback: check legacy media_items if user_library has no delta
+      if (updatedLibrary.length === 0) {
+        try {
+          const fallbackRes = await db.select().from(mediaItems).where(
+            and(
+              eq(mediaItems.userId, userId),
+              or(
+                gt(mediaItems.lastUpdatedAt, sinceIso),
+                gt(mediaItems.addedAt, sinceIso)
+              )
+            )
+          );
+          if (fallbackRes.length > 0) {
+            updatedLibrary = fallbackRes.map(i => ({
+              userId: i.userId,
+              mediaId: i.id,
+              status: i.status,
+              rating: i.rating,
+              favorite: Boolean(i.favorite),
+              progress: typeof (i as any).progress === 'number' ? (i as any).progress : null,
+              notes: i.notes,
+              tags: i.tags || [],
+              watchedEpisodes: i.watchedEpisodes || {},
+              userProgress: i.userProgress,
+              tvSpecifics: i.tvSpecifics,
+              bookSpecifics: i.bookSpecifics,
+              movieSpecifics: (i as any).movieSpecifics,
+              addedAt: i.addedAt,
+              lastUpdatedAt: i.lastUpdatedAt,
+              type: i.type,
+              title: i.title,
+              originalTitle: null,
+              releaseDate: i.releaseDate,
+              poster: i.poster,
+              backdrop: i.backdrop,
+              synopsis: (i.rawMetadata as any)?.synopsis || (i.rawMetadata as any)?.overview || i.notes,
+              genres: i.genres || [],
+              creators: (i.rawMetadata as any)?.creators || [],
+              platforms: (i.rawMetadata as any)?.platforms || [],
+              runtime: (i.rawMetadata as any)?.runtime || null,
+              totalEpisodes: i.totalEpisodes,
+              rawMetadata: i.rawMetadata
+            }));
+          }
+        } catch {}
+      }
+
+      // 2. Fetch diary entries modified after sinceIso
+      const diaryRes = await db.select().from(diaryEntries).where(
+        and(
+          eq(diaryEntries.userId, userId),
+          or(
+            gt(diaryEntries.createdAt, sinceIso),
+            gt(diaryEntries.date, sinceIso)
+          )
+        )
+      );
+
+      // 3. Fetch custom lists modified after sinceIso
+      const listsRes = await db.select().from(customLists).where(
+        and(
+          eq(customLists.userId, userId),
+          or(
+            gt(customLists.updatedAt, sinceIso),
+            gt(customLists.createdAt, sinceIso)
+          )
+        )
+      );
+
+      const formattedLib = updatedLibrary.map(row => {
+        const meta: any = row.rawMetadata || {};
+        const isTv = row.type === 'tv';
+        return {
+          id: row.mediaId,
+          sourceId: row.mediaId,
+          title: row.title || "Untitled",
+          type: row.type || "movie",
+          status: row.status || "planned",
+          rating: typeof row.rating === 'number' ? row.rating : null,
+          favorite: Boolean(row.favorite),
+          poster: row.poster || (row as any).coverUrl || "",
+          backdrop: row.backdrop || (row as any).backdropUrl || "",
+          coverUrl: row.poster || (row as any).coverUrl || "",
+          backdropUrl: row.backdrop || (row as any).backdropUrl || "",
+          releaseDate: row.releaseDate || "",
+          synopsis: row.synopsis || meta.synopsis || meta.overview || "",
+          genres: Array.isArray(row.genres) ? row.genres : [],
+          tags: Array.isArray(row.tags) ? row.tags : [],
+          creators: Array.isArray(row.creators) ? row.creators : (meta.creators || []),
+          platforms: Array.isArray(row.platforms) ? row.platforms : (meta.platforms || []),
+          runtime: row.runtime || meta.runtime || "",
+          progress: row.progress ?? meta.progress ?? 0,
+          userProgress: row.userProgress || null,
+          watchedEpisodes: row.watchedEpisodes || (row.tvSpecifics as any)?.watchedEpisodes || {},
+          tvSpecifics: (row.tvSpecifics as any) || (isTv ? { watchedEpisodes: row.watchedEpisodes || {} } : null),
+          bookSpecifics: row.bookSpecifics || null,
+          movieSpecifics: row.movieSpecifics || meta.movieSpecifics || null,
+          notes: row.notes || "",
+          addedAt: row.addedAt || new Date().toISOString(),
+          lastUpdatedAt: row.lastUpdatedAt || new Date().toISOString(),
+          rawMetadata: meta,
+        };
+      });
+
+      const formattedDiary = diaryRes.map(d => ({
+        id: d.id,
+        mediaId: d.itemId || (d as any).mediaId || "",
+        mediaTitle: d.title || (d as any).mediaTitle || "Untitled",
+        mediaType: d.mediaType || "movie",
+        coverUrl: d.poster || (d as any).coverUrl || "",
+        rating: d.rating ?? undefined,
+        date: d.date || d.createdAt || "",
+        note: d.thoughts || (d as any).note || "",
+        activityType: d.entryType || (d as any).activityType || "noted",
+        isRewatch: Boolean(d.isRewatch),
+        createdAt: d.createdAt || d.date || "",
+        updatedAt: (d as any).updatedAt || d.createdAt || d.date || ""
+      }));
+
+      return {
+        isDelta: true,
+        library: formattedLib,
+        diary: formattedDiary,
+        customLists: listsRes,
+        timestamp: Date.now()
+      };
+    } catch (err: any) {
+      console.error("PostgreSQL error (getDeltaSyncData):", err.message);
+    }
+  }
+
+  // Fallback to in-memory/Firestore filter
+  const fullData = await getUserData(userId);
+  const sinceTime = new Date(sinceIso).getTime();
+
+  const filteredLibrary = (fullData.library || []).filter((i: any) => {
+    const t = new Date(i.lastUpdatedAt || i.updatedAt || i.addedAt || 0).getTime();
+    return t > sinceTime;
+  });
+
+  const filteredDiary = (fullData.diary || []).filter((d: any) => {
+    const t = new Date(d.updatedAt || d.createdAt || d.date || 0).getTime();
+    return t > sinceTime;
+  });
+
+  const filteredLists = (fullData.customLists || []).filter((l: any) => {
+    const t = new Date(l.updatedAt || l.createdAt || 0).getTime();
+    return t > sinceTime;
+  });
+
+  return {
+    isDelta: true,
+    library: filteredLibrary,
+    diary: filteredDiary,
+    customLists: filteredLists,
+    timestamp: Date.now()
   };
 }
 
