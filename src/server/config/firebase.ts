@@ -1,10 +1,13 @@
+import "dotenv/config";
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getAuth } from "firebase-admin/auth";
+import { getMessaging } from "firebase-admin/messaging";
 
 let firebaseAdminInitialized = false;
 let adminDb: any = null;
 let adminAuth: any = null;
+let adminMessaging: any = null;
 
 try {
   if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
@@ -21,10 +24,11 @@ try {
     adminDb = getFirestore(firebaseApp);
     adminDb.settings({ ignoreUndefinedProperties: true });
     adminAuth = getAuth(firebaseApp);
+    adminMessaging = getMessaging(firebaseApp);
 
     adminDb.collection("users").limit(1).get().then(() => {
       firebaseAdminInitialized = true;
-      console.log("🔥 Firebase Admin SDK initialized successfully.");
+      console.log("🔥 Firebase Admin SDK & FCM Messaging initialized successfully.");
     }).catch((err: any) => {
       console.error("⚠️ Firestore database error or offline fallback:", err.message);
       adminDb = null;
@@ -36,4 +40,4 @@ try {
   console.error("❌ Firebase Admin initialization error:", error);
 }
 
-export { firebaseAdminInitialized, adminDb, adminAuth };
+export { firebaseAdminInitialized, adminDb, adminAuth, adminMessaging };

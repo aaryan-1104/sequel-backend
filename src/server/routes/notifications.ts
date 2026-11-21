@@ -3,8 +3,10 @@ import { getUserIdByToken } from "../services/db.js";
 import {
   getVapidPublicKey,
   savePushSubscription,
+  saveFcmToken,
   removePushSubscription,
   sendPushToUser,
+  sendFcmNotification,
   dispatchDailyReleaseRadar,
 } from "../services/pushService.js";
 
@@ -64,6 +66,39 @@ router.post("/subscribe", async (req, res) => {
 });
 
 /**
+ * POST /api/notifications/register-fcm
+ * Registers or updates a device FCM registration token
+ */
+router.post("/register-fcm", async (req, res) => {
+  const { token, fcmToken, deviceInfo } = req.body;
+
+  if (!fcmToken) {
+    return res.status(400).json({ success: false, error: "Missing fcmToken" });
+  }
+
+  let userId: string | null = null;
+  if (token) {
+    userId = await getUserIdByToken(token);
+  }
+
+  if (!userId) {
+    userId = req.body.userId || "guest-" + Buffer.from(fcmToken).toString("base64").slice(0, 16);
+  }
+
+  const success = await saveFcmToken({
+    userId,
+    fcmToken,
+    deviceInfo: deviceInfo || req.headers["user-agent"] || undefined,
+  });
+
+  if (success) {
+    return res.json({ success: true, message: "FCM token registered successfully" });
+  } else {
+    return res.status(500).json({ success: false, error: "Failed to save FCM token" });
+  }
+});
+
+/**
  * POST /api/notifications/unsubscribe
  * Removes a device push subscription
  */
@@ -80,10 +115,10 @@ router.post("/unsubscribe", async (req, res) => {
 
 /**
  * POST /api/notifications/test-push
- * Sends a real test notification to the user's registered devices
+ * Sends a real test notification to the user's registered devices (FCM or Web Push)
  */
 router.post("/test-push", async (req, res) => {
-  const { token, endpoint } = req.body;
+  const { token, endpoint, fcmToken } = req.body;
 
   let userId: string | null = null;
   if (token) {
@@ -92,10 +127,8 @@ router.post("/test-push", async (req, res) => {
 
   if (!userId && endpoint) {
     userId = "guest-" + Buffer.from(endpoint).toString("base64").slice(0, 16);
-  }
-
-  if (!userId) {
-    return res.status(401).json({ success: false, error: "Authentication or valid endpoint required" });
+  } else if (!userId && fcmToken) {
+    userId = "guest-" + Buffer.from(fcmToken).toString("base64").slice(0, 16);
   }
 
   const testPayload = {
@@ -111,6 +144,18 @@ router.post("/test-push", async (req, res) => {
     tag: "test-alert",
     renotify: true,
   };
+
+  // Direct FCM token test push if provided
+  if (fcmToken) {
+    const directRes = await sendFcmNotification(fcmToken, testPayload);
+    if (directRes.success) {
+      return res.json({ success: true, sent: 1, failed: 0, method: "fcm" });
+    }
+  }
+
+  if (!userId) {
+    return res.status(401).json({ success: false, error: "Authentication or valid endpoint/fcmToken required" });
+  }
 
   const result = await sendPushToUser(userId, testPayload);
   return res.json({

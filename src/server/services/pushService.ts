@@ -3,6 +3,7 @@ import { db } from "../db/index.js";
 import { userPushSubscriptions, mediaItems } from "../db/schema.js";
 import { eq, and, inArray } from "drizzle-orm";
 import crypto from "crypto";
+import { adminMessaging } from "../config/firebase.js";
 
 export interface PushPayload {
   title: string;
@@ -104,6 +105,95 @@ export async function removePushSubscription(endpoint: string): Promise<boolean>
   }
 }
 
+export async function sendFcmNotification(
+  fcmToken: string,
+  payload: PushPayload
+): Promise<{ success: boolean; isExpired?: boolean; error?: string }> {
+  if (!adminMessaging) {
+    return { success: false, error: "Firebase Admin Messaging not initialized" };
+  }
+  if (!fcmToken) {
+    return { success: false, error: "Missing FCM token" };
+  }
+
+  const message = {
+    token: fcmToken,
+    notification: {
+      title: payload.title,
+      body: payload.body,
+      imageUrl: payload.icon || undefined,
+    },
+    data: {
+      title: payload.title,
+      body: payload.body,
+      url: payload.data?.url || "/",
+      tag: payload.tag || "chronicle-release-alert",
+      ...(payload.data ? Object.fromEntries(Object.entries(payload.data).map(([k, v]) => [k, String(v)])) : {}),
+    },
+    webpush: {
+      notification: {
+        title: payload.title,
+        body: payload.body,
+        icon: payload.icon || "/icon.svg",
+        badge: payload.badge || "/icon.svg",
+        tag: payload.tag || "chronicle-release-alert",
+        renotify: payload.renotify !== undefined ? payload.renotify : true,
+      },
+      fcmOptions: {
+        link: payload.data?.url || "/",
+      },
+    },
+    android: {
+      priority: "high" as const,
+      notification: {
+        channelId: "release_radar",
+        icon: "ic_notification",
+        color: "#F59E0B",
+      },
+    },
+    apns: {
+      payload: {
+        aps: {
+          sound: "default",
+          badge: 1,
+        },
+      },
+    },
+  };
+
+  try {
+    const response = await adminMessaging.send(message);
+    console.log("[pushService] FCM v1 notification sent successfully:", response);
+    return { success: true };
+  } catch (err: any) {
+    const errCode = err?.code || "";
+    console.warn("[pushService] FCM v1 send error:", errCode, err?.message);
+    if (
+      errCode === "messaging/registration-token-not-registered" ||
+      errCode === "messaging/invalid-registration-token"
+    ) {
+      if (db) {
+        await db.delete(userPushSubscriptions).where(eq(userPushSubscriptions.endpoint, fcmToken)).catch(() => {});
+      }
+      return { success: false, isExpired: true, error: "FCM token unregistered" };
+    }
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
+export async function saveFcmToken(data: {
+  userId: string;
+  fcmToken: string;
+  deviceInfo?: string;
+}): Promise<boolean> {
+  return savePushSubscription({
+    userId: data.userId,
+    type: "fcm",
+    endpoint: data.fcmToken,
+    deviceInfo: data.deviceInfo,
+  });
+}
+
 export async function sendWebPush(
   sub: { endpoint: string; p256dh?: string | null; auth?: string | null },
   payload: PushPayload
@@ -150,7 +240,12 @@ export async function sendPushToUser(
     let failed = 0;
 
     for (const sub of subs) {
-      const res = await sendWebPush(sub, payload);
+      let res: { success: boolean; isExpired?: boolean; error?: string };
+      if (sub.type === "fcm") {
+        res = await sendFcmNotification(sub.endpoint, payload);
+      } else {
+        res = await sendWebPush(sub, payload);
+      }
       if (res.success) {
         sent++;
       } else {

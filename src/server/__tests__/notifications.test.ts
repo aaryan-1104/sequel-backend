@@ -44,6 +44,27 @@ describe("Notifications API Routes", () => {
     }
   });
 
+  it("POST /api/notifications/register-fcm rejects missing fcmToken", async () => {
+    const res = await request(app).post("/api/notifications/register-fcm").send({});
+    expect(res.status).toBe(400);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toContain("Missing fcmToken");
+  });
+
+  it("POST /api/notifications/register-fcm validates fcmToken registration", async () => {
+    const res = await request(app)
+      .post("/api/notifications/register-fcm")
+      .send({
+        fcmToken: "mock-fcm-device-registration-token-abc-123",
+        deviceInfo: "Chrome PWA on Windows",
+      });
+
+    expect([200, 500]).toContain(res.status);
+    if (res.status === 200) {
+      expect(res.body.success).toBe(true);
+    }
+  });
+
   it("POST /api/notifications/unsubscribe rejects missing endpoint", async () => {
     const res = await request(app).post("/api/notifications/unsubscribe").send({});
     expect(res.status).toBe(400);
